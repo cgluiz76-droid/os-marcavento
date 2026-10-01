@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema O.S. Marca Vento | Integração Moskit CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/print.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('mv-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- Top Application Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-wrapper">
+        <div class="brand-logo-badge" id="brand-logo-badge">
+          <img id="company-logo-img" class="company-logo-img" alt="Logotipo da empresa" style="display: none;">
+          <span class="brand-title" id="brand-text-fallback">MARCA <span>VENTO</span></span>
+        </div>
+        <div class="brand-subtitle">
+          <strong>Ordens de Serviço &amp; Automação</strong>
+          <small id="status-indicator">Moskit CRM Integrado</small>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-icon" id="btn-theme-toggle" title="Alternar modo claro/escuro">
+          <span id="theme-toggle-icon">☀️</span>
+        </button>
+
+        <button class="btn btn-outline-gold" id="btn-sync-moskit" title="Sincronizar negócios 'Ganhou' do Moskit">
+          <span class="btn-icon-symbol">🔄</span> Sincronizar Moskit
+        </button>
+
+        <button class="btn btn-secondary" id="btn-import-id" title="Importar negócio específico pelo ID do Moskit">
+          <span>🔍</span> Importar por ID
+        </button>
+
+        <button class="btn btn-primary" id="btn-new-order" title="Criar nova O.S. manualmente">
+          <span>➕</span> Nova O.S.
+        </button>
+
+        <button class="btn btn-secondary" id="btn-open-mappings" title="Parametrizar campos do Moskit">
+          <span>⚙️</span> Mapeamento
+        </button>
+
+        <button class="btn btn-secondary" id="btn-open-skus" title="Dicionário de SKUs e Tabela Referencial">
+          <span>🏷️</span> Dicionário de SKUs
+        </button>
+
+        <button class="btn btn-secondary" id="btn-open-templates" title="Gerenciar Modelos de PDF">
+          <span>📄</span> Modelos PDF
+        </button>
+
+        <button class="btn btn-secondary" id="btn-open-settings" title="Configurações e Numeração Sequencial">
+          <span>🛠️</span> Configurações
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Dashboard -->
+  <main class="main-content">
+    
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📋</div>
+        <div class="stat-info">
+          <span class="stat-label">Total de Ordens de Serviço</span>
+          <span class="stat-value" id="stat-total-orders">0</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-green">
+        <div class="stat-icon">🏆</div>
+        <div class="stat-info">
+          <span class="stat-label">Negócios Ganhos (Moskit)</span>
+          <span class="stat-value" id="stat-won-deals">0</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-blue">
+        <div class="stat-icon">🖼️</div>
+        <div class="stat-info">
+          <span class="stat-label">Com Foto da Arte</span>
+          <span class="stat-value" id="stat-with-photo">0</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-purple">
+        <div class="stat-icon">🔢</div>
+        <div class="stat-info">
+          <span class="stat-label">Próximo Orçamento Nº</span>
+          <span class="stat-value" id="stat-next-budget">----/--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar & Filters -->
+    <div class="toolbar-section">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="input-search" placeholder="Buscar por Nº do Orçamento, Cliente, CNPJ, Contato...">
+      </div>
+
+      <div class="date-range-filter">
+        <label for="filter-date-from">Período</label>
+        <input type="date" id="filter-date-from" title="Data inicial">
+        <span class="date-range-sep">até</span>
+        <input type="date" id="filter-date-to" title="Data final">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-apply-date-filter">Filtrar</button>
+      </div>
+
+      <div class="filter-pills">
+        <button class="filter-pill active" data-filter="all">Todos</button>
+        <button class="filter-pill" data-filter="won">Ganhou / Novos</button>
+        <button class="filter-pill" data-filter="production">Em Produção</button>
+        <button class="filter-pill" data-filter="finished">Concluídos</button>
+      </div>
+    </div>
+
+    <div class="bulk-actions-bar" id="bulk-actions-bar">
+      <label class="bulk-select-all">
+        <input type="checkbox" id="chk-select-all-visible">
+        Selecionar todas desta página
+      </label>
+      <span id="bulk-selected-count">0 selecionada(s)</span>
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-print-selected">🖨️ Imprimir selecionadas</button>
+      <button type="button" class="btn btn-outline-gold btn-sm" id="btn-pdf-selected">📥 PDF selecionadas</button>
+      <button type="button" class="btn btn-danger btn-sm" id="btn-delete-selected">🗑️ Excluir selecionadas</button>
+    </div>
+
+    <!-- Orders Table Card -->
+    <div class="table-card">
+      <div class="table-responsive">
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th class="col-select">
+                <input type="checkbox" id="chk-select-all" title="Selecionar todas as O.S. desta página">
+              </th>
+              <th>Orçamento Nº</th>
+              <th>Data</th>
+              <th>Nome Fantasia / Cliente</th>
+              <th>Itens</th>
+              <th>Entrega / Pagamento</th>
+              <th>Foto Arte</th>
+              <th>Status</th>
+              <th style="text-align: right;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="orders-table-body">
+            <!-- Populated via JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Empty State -->
+      <div id="orders-empty-state" class="empty-state" style="display: none;">
+        <div class="empty-state-icon">📄</div>
+        <h3>Nenhuma Ordem de Serviço encontrada</h3>
+        <p>Clique em <strong>"Sincronizar Moskit"</strong> ou <strong>"Nova O.S."</strong> para começar.</p>
+      </div>
+
+      <div class="pagination-bar" id="pagination-bar">
+        <span class="pagination-info" id="pagination-info">Mostrando 0 de 0</span>
+        <div class="pagination-controls">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-page-prev">‹ Anterior</button>
+          <div class="pagination-pages" id="pagination-pages"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-page-next">Próxima ›</button>
+        </div>
+        <label class="pagination-size">
+          Por página
+          <select id="select-page-size">
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================== -->
+  <!-- MODAL 1: EDITOR COMPLETO DA O.S.               -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-order">
+    <div class="modal-container" style="max-width: 960px;">
+      <div class="modal-header">
+        <h2 id="modal-order-title"><span>✏️</span> Editar Ordem de Serviço</h2>
+        <button class="modal-close-btn" data-close="modal-order">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="form-order">
+          <input type="hidden" id="order-id">
+          <input type="hidden" id="order-moskit-id">
+
+          <!-- Linha Superior: Orçamento e Data -->
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="order-orcamento">Orçamento Nº</label>
+              <input type="text" id="order-orcamento" required placeholder="ex: 0001/26">
+            </div>
+
+            <div class="form-group">
+              <label for="order-data">Data da O.S.</label>
+              <input type="text" id="order-data" required placeholder="DD/MM/AAAA">
+            </div>
+
+            <div class="form-group">
+              <label for="order-template">Modelo de Impressão (PDF)</label>
+              <select id="order-template">
+                <!-- Loaded dynamically -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="order-status">Status da Produção</label>
+              <select id="order-status">
+                <option value="won">Ganhou / Novo</option>
+                <option value="production">Em Produção</option>
+                <option value="finished">Concluído</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Seção Cliente -->
+          <div class="form-section-title">🏢 Dados do Cliente</div>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label for="order-nome-fantasia">Nome Fantasia (Impresso no PDF)</label>
+              <input type="text" id="order-nome-fantasia" required placeholder="Nome da empresa ou cliente">
+            </div>
+
+            <div class="form-group">
+              <label for="order-razao-social">Razão Social</label>
+              <input type="text" id="order-razao-social" placeholder="Razão social completa">
+            </div>
+
+            <div class="form-group">
+              <label for="order-cnpj">CNPJ / CPF</label>
+              <input type="text" id="order-cnpj" placeholder="00.000.000/0000-00">
+            </div>
+
+            <div class="form-group">
+              <label for="order-contato">Nome do Contato</label>
+              <input type="text" id="order-contato" placeholder="Nome do responsável">
+            </div>
+
+            <div class="form-group">
+              <label for="order-telefone">Telefone / WhatsApp</label>
+              <input type="text" id="order-telefone" placeholder="(00) 00000-0000">
+            </div>
+          </div>
+
+          <!-- Seção Condições Comerciais -->
+          <div class="form-section-title">🚚 Condições de Entrega e Pagamento</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="order-entrega">Data da Entrega</label>
+              <input type="text" id="order-entrega" placeholder="DD/MM/AAAA">
+            </div>
+
+            <div class="form-group">
+              <label for="order-forma-pgto">Forma de Pagamento</label>
+              <input type="text" id="order-forma-pgto" placeholder="PIX, Boleto, Cartão...">
+            </div>
+
+            <div class="form-group">
+              <label for="order-prazo-pgto">Prazo de Pagamento</label>
+              <input type="text" id="order-prazo-pgto" placeholder="À Vista, 28 dias, 50% entrada...">
+            </div>
+
+            <div class="form-group">
+              <label for="order-frete">Frete</label>
+              <input type="text" id="order-frete" placeholder="Incluso, FOB / Transportadora...">
+            </div>
+          </div>
+
+          <!-- Seção Produtos / Itens -->
+          <div class="form-section-title" style="justify-content: space-between;">
+            <span>📦 Tabela de Produtos / Itens da O.S. (com Busca por SKU)</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-item">➕ Adicionar Linha</button>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="items-edit-table">
+              <thead>
+                <tr>
+                  <th style="width: 15%;">SKU</th>
+                  <th style="width: 8%;">Qtde.</th>
+                  <th style="width: 22%;">Prod.</th>
+                  <th style="width: 16%;">Modelo</th>
+                  <th style="width: 15%;">Dimensão</th>
+                  <th style="width: 12%;">Posição</th>
+                  <th style="width: 12%;">Base</th>
+                  <th style="width: 45px; text-align: center;">Ação</th>
+                </tr>
+              </thead>
+              <tbody id="order-items-tbody">
+                <!-- Dynamically added rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Seção Foto da Arte / Mockup -->
+          <div class="form-section-title">🖼️ Foto da Arte / Layout para Impressão da O.S.</div>
+          
+          <div class="photo-dropzone" id="photo-dropzone">
+            <input type="file" id="input-photo-file" accept="image/jpeg,image/png,image/webp">
+            <p style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem;">
+              Arraste a foto da arte aqui ou clique para selecionar
+            </p>
+            <small style="color: var(--text-muted);">Suporta JPG, PNG e WebP de alta resolução (máx. 25MB)</small>
+          </div>
+
+          <div id="photo-preview-container" class="photo-preview-box" style="display: none;">
+            <img id="photo-preview-img" src="" alt="Foto da Arte">
+            <button type="button" class="photo-remove-btn" id="btn-remove-photo">🗑️ Remover Foto</button>
+          </div>
+
+          <!-- Observações Gerais / Informações Adicionais -->
+          <div class="form-group full-width" style="margin-top: 1.25rem;">
+            <label for="order-observacoes">Informações Adicionais (Observações da O.S.)</label>
+            <textarea id="order-observacoes" rows="2" placeholder="Informações adicionais de acabamento, detalhes de produção, medidas especiais..."></textarea>
+          </div>
+
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-order">Cancelar</button>
+        <button type="button" class="btn btn-secondary" id="btn-preview-from-modal">👁️ Visualizar Impressão</button>
+        <button type="button" class="btn btn-primary" id="btn-save-order">💾 Salvar O.S.</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL 2: PARAMETRIZAÇÃO DE CAMPOS DO MOSKIT    -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-mappings">
+    <div class="modal-container" style="max-width: 880px;">
+      <div class="modal-header">
+        <h2><span>⚙️</span> Parametrização de Campos (Moskit CRM &rarr; O.S.)</h2>
+        <button class="modal-close-btn" data-close="modal-mappings">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 1.25rem; font-size: 0.9rem;">
+          Selecione qual campo vindo do Moskit CRM (incluindo campos personalizados) deve preencher cada local da Ordem de Serviço.
+          Ao salvar, todas as próximas importações aplicarão esse mapeamento automaticamente.
+        </p>
+
+        <div class="form-section-title">Campos do Cabeçalho e Cliente</div>
+        <div id="mappings-header-fields">
+          <!-- Populated dynamically with Moskit select options -->
+        </div>
+
+        <div class="form-section-title">Colunas da Tabela de Itens</div>
+        <div id="mappings-item-fields">
+          <!-- Populated dynamically with Moskit product select options -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-mappings">Fechar</button>
+        <button type="button" class="btn btn-primary" id="btn-save-mappings">💾 Salvar Parametrização</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL 3: GESTÃO DE MODELOS DE PDF              -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-templates">
+    <div class="modal-container" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2><span>📄</span> Gerenciador de Modelos de PDF</h2>
+        <button class="modal-close-btn" data-close="modal-templates">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 1.25rem; font-size: 0.9rem;">
+          Você pode cadastrar e "subir" novos arquivos PDF para usar como modelos de Ordem de Serviço.
+        </p>
+
+        <!-- Dropzone de Upload de PDF -->
+        <div class="photo-dropzone" id="template-dropzone" style="margin-bottom: 1.5rem;">
+          <input type="file" id="input-template-file" accept="application/pdf">
+          <p style="font-size: 1.05rem; font-weight: 600;">➕ Arraste um novo arquivo .PDF aqui ou clique para selecionar</p>
+          <small style="color: var(--text-muted);">O novo modelo ficará disponível para seleção em todas as O.S.</small>
+        </div>
+
+        <!-- Lista de Modelos -->
+        <div class="form-section-title">Modelos Cadastrados</div>
+        <div id="templates-list-container">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-templates">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL 4: CONFIGURAÇÕES & NUMERAÇÃO SEQUENCIAL  -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-settings">
+    <div class="modal-container" style="max-width: 780px;">
+      <div class="modal-header">
+        <h2><span>🛠️</span> Configurações do Sistema</h2>
+        <button class="modal-close-btn" data-close="modal-settings">&times;</button>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- Logotipo da Empresa -->
+        <div class="form-section-title">🏷️ Logotipo da Empresa</div>
+        <div style="display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+          <div id="settings-logo-preview" style="width: 120px; height: 60px; border: 1px dashed var(--border-light); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--bg-card); overflow: hidden;">
+            <img id="settings-logo-img" src="" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;">
+            <span id="settings-logo-placeholder" style="font-size: 0.75rem; color: var(--text-muted); text-align: center;">Sem logotipo</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <input type="file" id="input-company-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-upload-logo">📷 Enviar Logotipo</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-remove-logo">🗑️ Remover Logo</button>
+          </div>
+          <small style="color: var(--text-muted); font-size: 0.78rem;">O logotipo aparece no cabeçalho da aplicação.<br>Formatos: PNG, JPG, WebP ou SVG (máx. 8MB).</small>
+        </div>
+
+        <!-- Integração Moskit -->
+        <div class="form-section-title">🔑 Conexão com Moskit CRM</div>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label for="setting-moskit-api-key">Chave de API Pública (API Key)</label>
+            <div style="display: flex; gap: 0.75rem;">
+              <input type="password" id="setting-moskit-api-key" placeholder="Insira sua API Key gerada no Moskit Marketplace" style="flex: 1;">
+              <button type="button" class="btn btn-secondary" id="btn-test-moskit-conn">Testar Conexão</button>
+            </div>
+            <small style="color: var(--text-muted); margin-top: 0.35rem;">
+              Obtenha em: Moskit CRM &gt; Marketplace &gt; API pública do Moskit CRM &gt; Ativar / Copiar chave.
+            </small>
+          </div>
+        </div>
+
+        <!-- Numeração Sequencial -->
+        <div class="form-section-title">🔢 Orçamento Nº: Numeração Sequencial com Autoincremento</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="setting-orcamento-numero">Próximo Número Inicial</label>
+            <input type="number" id="setting-orcamento-numero" min="1" step="1" required>
+            <small style="color: var(--text-muted);">Defina o próximo número sequencial da O.S.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-orcamento-formato">Formato do Orçamento</label>
+            <input type="text" id="setting-orcamento-formato" placeholder="{NUM}/26">
+            <small style="color: var(--text-muted);">{NUM} = número com zeros | {YY} = ano curto</small>
+          </div>
+
+          <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 0.75rem; margin-top: 0.5rem;">
+            <input type="checkbox" id="setting-orcamento-autoincrement" style="width: 20px; height: 20px; cursor: pointer;">
+            <label for="setting-orcamento-autoincrement" style="cursor: pointer; text-transform: none; font-size: 0.95rem;">
+              Ativar <strong>Autoincremento Automático</strong> (incrementa o número a cada novo negócio Ganhou / O.S.)
+            </label>
+          </div>
+
+          <div class="form-group full-width" style="background: rgba(245, 158, 11, 0.1); border: 1px dashed var(--accent-gold); padding: 0.75rem 1rem; border-radius: 8px;">
+            <span style="font-size: 0.88rem; color: var(--accent-gold);">
+              Exemplo do próximo Orçamento Nº gerado: <strong id="preview-next-budget-format" style="font-size: 1.1rem; color: #ffffff;">0001/26</strong>
+            </span>
+          </div>
+        </div>
+
+        <!-- Webhook do Moskit -->
+        <div class="form-section-title">🌐 Webhook do Moskit (Importação Automática em Tempo Real)</div>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+          Cadastre esta URL nas configurações de Webhooks do Moskit para receber negócios automaticamente quando forem movidos para "Ganhou":
+        </p>
+
+        <div class="form-group full-width">
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="setting-webhook-url" readonly style="background: #0b0f19; font-family: monospace;">
+            <button type="button" class="btn btn-secondary" id="btn-copy-webhook">Copiar URL</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-simulate-deal">
+            ⚡ Simular Recebimento de Negócio "Ganhou"
+          </button>
+          <small style="color: var(--text-muted);">Permite testar o sistema instantaneamente com dados simulados.</small>
+        </div>
+
+        <!-- Personalização de Grifar Campos no PDF -->
+        <div class="form-section-title">🖊️ Personalização — Grifar Campos no PDF (Destaque Amarelo)</div>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+          Selecione quais campos serão destacados com <strong style="color:#f59e0b;">fundo amarelo</strong> no PDF gerado. Aplica-se globalmente a todas as O.S.
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.6rem 1.5rem;">
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-data" style="width:18px;height:18px;cursor:pointer;">
+            📅 Data da O.S.
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-orcamento" style="width:18px;height:18px;cursor:pointer;">
+            🔢 Número do Orçamento
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-qtde" style="width:18px;height:18px;cursor:pointer;">
+            📦 QTDE. (Quantidade)
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-dimensao" style="width:18px;height:18px;cursor:pointer;">
+            📐 Dimensão
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-posicao" style="width:18px;height:18px;cursor:pointer;">
+            🔄 Posição
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-modelo" style="width:18px;height:18px;cursor:pointer;">
+            🏷️ Modelo
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-base" style="width:18px;height:18px;cursor:pointer;">
+            🪨 Base
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-entrega" style="width:18px;height:18px;cursor:pointer;">
+            🚚 Data da Entrega
+          </label>
+
+          <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="setting-grifar-observacoes" style="width:18px;height:18px;cursor:pointer;">
+            📝 Informações Adicionais
+          </label>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-settings">Fechar</button>
+        <button type="button" class="btn btn-primary" id="btn-save-settings">💾 Salvar Configurações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL 5: VISUALIZADOR E IMPRESSÃO FIEL A4      -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop print-preview-modal" id="modal-print-preview">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2><span>🖨️</span> Visualização e Impressão da O.S. (Fiel ao Modelo)</h2>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <button type="button" class="btn btn-primary btn-sm" id="btn-trigger-print">
+            🖨️ Imprimir Agora (Ctrl+P)
+          </button>
+          <button type="button" class="btn btn-outline-gold btn-sm" id="btn-download-pdf">
+            📥 Baixar PDF Oficial
+          </button>
+          <button class="modal-close-btn" data-close="modal-print-preview">&times;</button>
+        </div>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem;">
+        <div class="os-print-scroll-wrapper">
+          
+          <!-- Folha A4 Milimétrica -->
+          <div class="os-a4-sheet" id="os-print-sheet">
+            
+            <!-- Top Banner Oficial Extraído -->
+            <img src="assets/header_banner.jpg" class="os-header-banner-img" alt="Marca Vento">
+
+            <!-- Linha Data e Orçamento (Uma linha abaixo) -->
+            <div class="os-top-info-row" style="margin-top: 14px;">
+              <div class="os-date-block">
+                DATA: <span id="print-data">23/09/2026</span>
+              </div>
+              <div class="os-budget-block">
+                ORÇAMENTO Nº <span class="os-budget-number-highlight" id="print-orcamento">0001/26</span>
+              </div>
+            </div>
+
+            <!-- Caixa Nome Fantasia -->
+            <div class="os-client-box">
+              <strong>NOME FANTASIA:</strong>
+              <span class="os-client-value" id="print-nome-fantasia">CLIENTE TESTE</span>
+            </div>
+
+            <!-- Tabela de Produtos / Itens -->
+            <table class="os-items-table">
+              <thead>
+                <tr>
+                  <th class="col-qtde">QTDE.</th>
+                  <th class="col-prod">PROD.</th>
+                  <th class="col-modelo">MODELO</th>
+                  <th class="col-dimensao">DIMENSÃO</th>
+                  <th class="col-posicao">POSIÇÃO</th>
+                  <th class="col-base">BASE</th>
+                </tr>
+              </thead>
+              <tbody id="print-items-tbody">
+                <!-- Linhas geradas conforme a quantidade de itens da O.S. -->
+              </tbody>
+            </table>
+
+            <!-- Caixa de Condições de Entrega e Pagamento -->
+            <div class="os-conditions-box">
+              <div class="os-cond-item">
+                <strong>DATA DA ENTREGA:</strong> <span id="print-entrega">--/--/----</span>
+              </div>
+              <div class="os-cond-item">
+                <strong>FORMA DE PGTO:</strong> <span id="print-forma-pgto">PIX</span>
+              </div>
+              <div class="os-cond-item">
+                <strong>PRAZO DE PGTO:</strong> <span id="print-prazo-pgto">À Vista</span>
+              </div>
+            </div>
+
+            <!-- Caixa de Informações Adicionais (Abaixo do grupo DATA DA ENTREGA) -->
+            <div class="os-additional-info-box" id="print-additional-box">
+              <strong>INFORMAÇÕES ADICIONAIS:</strong>
+              <span id="print-observacoes" class="os-additional-info-val"></span>
+            </div>
+
+            <!-- Linha de Frete -->
+            <div class="os-freight-row">
+              FRETE: <span id="print-frete">Incluso</span>
+            </div>
+
+            <!-- Área Central para a Foto da Arte -->
+            <div class="os-artwork-container" id="print-artwork-container">
+              <img id="print-photo-img" src="" alt="Layout da Arte" style="display: none;">
+              <div id="print-photo-placeholder" class="os-artwork-empty">
+                [ Espaço Reservado para a Foto / Mockup da Arte da O.S. ]
+              </div>
+            </div>
+
+            <!-- Rodapé Oficial Extraído -->
+            <img src="assets/footer_info.jpg" class="os-footer-banner-img" alt="Marca Vento Contato e Endereço">
+
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-print-preview">Fechar</button>
+        <button type="button" class="btn btn-primary" id="btn-trigger-print-bottom">🖨️ Imprimir O.S.</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL 6: DICIONÁRIO E CADASTRO DE SKUS          -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-skus">
+    <div class="modal-container" style="max-width: 980px;">
+      <div class="modal-header">
+        <h2>
+          <span>🏷️</span> Dicionário de SKUs e Tabela Referencial
+          <span class="badge badge-info" id="skus-count-badge" style="font-size: 0.8rem; margin-left: 0.5rem;">0 cadastrados</span>
+        </h2>
+        <button class="modal-close-btn" data-close="modal-skus">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 1.25rem; font-size: 0.9rem;">
+          Cadastre os SKUs dos produtos para mapear automaticamente cada campo da O.S. (<strong>Produto, Modelo, Dimensão, Posição e Base</strong>).
+          Ao importar negócios do Moskit CRM, os dados serão montados a partir desta tabela referencial.
+        </p>
+
+        <!-- Barra de Ações de SKUs -->
+        <div style="display: flex; gap: 0.75rem; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 250px;">
+            <input type="text" id="input-search-sku" placeholder="Buscar por código SKU, Produto, Modelo..." style="width: 100%;">
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sync-skus-moskit">
+              🔄 Sincronizar Produtos do Moskit
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-add-sku">
+              ➕ Novo SKU
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela de SKUs -->
+        <div style="overflow-x: auto; max-height: 440px; border: 1px solid var(--border-color); border-radius: 8px;">
+          <table class="items-edit-table" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="position: sticky; top: 0; background: var(--bg-card); z-index: 2;">
+                <th style="width: 16%;">SKU</th>
+                <th style="width: 18%;">Produto</th>
+                <th style="width: 12%;">Modelo</th>
+                <th style="width: 14%;">Dimensão</th>
+                <th style="width: 13%;">Posição</th>
+                <th style="width: 12%;">Base</th>
+                <th>Descrição / Moskit</th>
+                <th style="width: 70px; text-align: right;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="skus-table-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-skus">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 6.1: FORMULÁRIO DE CADASTRO / EDIÇÃO DE SKU -->
+  <div class="modal-backdrop" id="modal-sku-form" style="z-index: 1050;">
+    <div class="modal-container" style="max-width: 620px;">
+      <div class="modal-header">
+        <h2 id="form-sku-title">➕ Novo Cadastro de SKU</h2>
+        <button class="modal-close-btn" data-close="modal-sku-form">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          
+          <div class="form-group full-width">
+            <label for="sku-input-code">Código do SKU *</label>
+            <input type="text" id="sku-input-code" placeholder="ex: WBB200FDSO" style="font-family: monospace; font-size: 1.1rem; text-transform: uppercase;">
+            <small style="color: var(--text-muted);">Exemplo: WBB200FDSO (WB = Wind Banner, B = Box, 200 = 2,00, FD = Face Dupla, SO = Solo)</small>
+          </div>
+
+          <!-- Sugestão Automática -->
+          <div id="sku-auto-preview" class="form-group full-width" style="display: none; background: rgba(59, 130, 246, 0.12); border: 1px dashed #3b82f6; border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #93c5fd;">
+            <!-- Live breakdown -->
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-prod">Campo PROD. (Produto)</label>
+            <input type="text" id="sku-input-prod" placeholder="ex: Wind Banner">
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-modelo">Campo MODELO</label>
+            <input type="text" id="sku-input-modelo" placeholder="ex: Box, Pena, Vela...">
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-dimensao">Campo DIMENSÃO</label>
+            <input type="text" id="sku-input-dimensao" placeholder="ex: 2,00 ou 3,00 x 2,00">
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-posicao">Campo POSIÇÃO</label>
+            <input type="text" id="sku-input-posicao" placeholder="ex: Face Dupla">
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-base">Campo BASE</label>
+            <input type="text" id="sku-input-base" placeholder="ex: Solo, Plástica, Reta...">
+          </div>
+
+          <div class="form-group">
+            <label for="sku-input-descricao">Nome / Descrição do Produto</label>
+            <input type="text" id="sku-input-descricao" placeholder="ex: Wind Banner Box 2,00m Face Dupla Base Solo">
+          </div>
+
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-sku-form">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btn-save-sku">💾 Salvar SKU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Datalist para autocomplete de SKUs nos itens da O.S. -->
+  <datalist id="skus-datalist"></datalist>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <div id="print-batch-root" aria-hidden="true"></div>
+
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="js/moskit.js"></script>
+  <script src="js/skuManager.js"></script>
+  <script src="js/print.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

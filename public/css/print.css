@@ -1,0 +1,291 @@
+/* Estilos para Visualização na Tela e Impressão Fiel A4 */
+
+.print-preview-modal .modal-container {
+  max-width: 900px;
+  background: #1e293b;
+}
+
+.os-print-scroll-wrapper {
+  background: #334155;
+  padding: 1.5rem;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+/* Folha A4 Exata */
+.os-a4-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  background: #ffffff;
+  color: #000000;
+  padding: 12mm 14mm 10mm 14mm;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Banner Superior */
+.os-header-banner-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 7.5mm; /* Uma linha abaixo */
+}
+
+/* Linha de Data e Orçamento */
+.os-top-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13pt;
+  font-weight: bold;
+  margin-bottom: 3mm;
+}
+
+.os-date-block {
+  color: #000000;
+}
+
+.os-date-block strong {
+  font-size: 13pt;
+}
+
+.os-budget-block {
+  font-size: 13pt;
+}
+
+.os-budget-block strong {
+  color: #000000;
+}
+
+.os-budget-number-highlight {
+  color: #d97706;
+  font-weight: 800;
+}
+
+/* Caixa Nome Fantasia */
+.os-client-box {
+  border: 1px solid #000000;
+  padding: 2.2mm 3.5mm;
+  font-size: 10.5pt;
+  margin-bottom: 2mm;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.os-client-box strong {
+  font-size: 10pt;
+  letter-spacing: 0.2px;
+}
+
+.os-client-value {
+  font-weight: bold;
+  font-size: 11pt;
+  text-transform: uppercase;
+}
+
+/* Tabela de Produtos / Itens */
+.os-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 2.5mm;
+  table-layout: fixed;
+}
+
+.os-items-table th {
+  border: 1px solid #000000;
+  padding: 2.2mm 2mm;
+  font-size: 9.5pt;
+  font-weight: bold;
+  text-align: center;
+  background: #f8fafc;
+  color: #000000;
+}
+
+.os-items-table td {
+  border: 1px solid #000000;
+  padding: 2mm 2mm;
+  font-size: 8.5pt;
+  text-align: center;
+  min-height: 6.2mm;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.os-items-table th.col-qtde, .os-items-table td.col-qtde { width: 12%; font-weight: bold; }
+.os-items-table th.col-prod, .os-items-table td.col-prod { width: 22%; text-align: left; }
+.os-items-table th.col-modelo, .os-items-table td.col-modelo { width: 18%; }
+.os-items-table th.col-dimensao, .os-items-table td.col-dimensao { width: 18%; }
+.os-items-table th.col-posicao, .os-items-table td.col-posicao { width: 15%; }
+.os-items-table th.col-base, .os-items-table td.col-base { width: 15%; }
+
+/* Caixa de Condições (Entrega, Forma e Prazo) */
+.os-conditions-box {
+  border: 1px solid #000000;
+  padding: 2.2mm 3.5mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9pt;
+  margin-bottom: 2mm;
+}
+
+.os-cond-item strong {
+  font-size: 8.5pt;
+}
+
+/* Caixa de Informações Adicionais (Abaixo de DATA DA ENTREGA) */
+.os-additional-info-box {
+  border: 1px solid #000000;
+  padding: 1.8mm 3mm;
+  font-size: 8.5pt;
+  margin-bottom: 2mm;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ffffff;
+}
+
+.os-additional-info-box strong {
+  font-size: 8.5pt;
+  font-weight: bold;
+  color: #000000;
+  white-space: nowrap;
+}
+
+.os-additional-info-val {
+  font-size: 8.5pt;
+  font-weight: bold;
+  color: #000000;
+}
+
+/* Linha de Frete */
+.os-freight-row {
+  font-size: 10.5pt;
+  font-weight: bold;
+  margin-bottom: 2mm;
+  padding-left: 1mm;
+}
+
+/* Área Central da Foto */
+.os-artwork-container {
+  flex: 1;
+  min-height: 105mm;
+  max-height: 125mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2mm;
+  margin: 1mm 0 2mm 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.os-artwork-container img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.os-artwork-empty {
+  color: #cbd5e1;
+  border: 2px dashed #e2e8f0;
+  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11pt;
+  font-weight: 500;
+}
+
+/* Rodapé */
+.os-footer-banner-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: auto;
+}
+
+/* ==================================================== */
+/* REGRAS EXCLUSIVAS DE IMPRESSÃO (@media print)        */
+/* ==================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: 100% !important;
+  }
+
+  /* Ocultar toda a interface comum */
+  header.app-header,
+  main.main-content,
+  #toast-container,
+  .modal-header,
+  .modal-footer,
+  .btn,
+  .toolbar-section,
+  .stats-grid,
+  .table-card {
+    display: none !important;
+  }
+
+  /* Exibir apenas a folha de O.S. */
+  .modal-backdrop.print-preview-modal {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    display: block !important;
+    opacity: 1 !important;
+    backdrop-filter: none !important;
+  }
+
+  .modal-container {
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: transparent !important;
+    transform: none !important;
+  }
+
+  .modal-body {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .os-print-scroll-wrapper {
+    background: transparent !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  .os-a4-sheet {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    box-sizing: border-box !important;
+    padding: 10mm 12mm 8mm 12mm !important;
+  }
+}
