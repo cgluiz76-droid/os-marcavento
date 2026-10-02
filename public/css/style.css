@@ -194,7 +194,7 @@ header.app-header {
 .btn-secondary:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-light);
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .btn-outline-gold {
@@ -354,7 +354,7 @@ main.main-content {
 .search-box input:focus {
   outline: none;
   border-color: var(--accent-gold);
-  background: #172033;
+  background: var(--bg-card);
   box-shadow: 0 0 0 3px var(--accent-gold-light);
 }
 
@@ -435,7 +435,7 @@ table.orders-table td {
 }
 
 table.orders-table tr:hover td {
-  background: rgba(31, 41, 61, 0.4);
+  background: var(--bg-card-hover);
 }
 
 /* Table Specific Elements */
@@ -662,7 +662,7 @@ table.orders-table tr:hover td {
 .form-group textarea:focus {
   outline: none;
   border-color: var(--accent-gold);
-  background: #172033;
+  background: var(--bg-secondary);
   box-shadow: 0 0 0 3px var(--accent-gold-light);
 }
 
@@ -699,7 +699,7 @@ table.orders-table tr:hover td {
 .items-edit-table td {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border-color);
-  background: rgba(31, 41, 61, 0.2);
+  background: var(--bg-card);
 }
 
 .items-edit-table input {
@@ -724,7 +724,7 @@ table.orders-table tr:hover td {
   border-radius: var(--radius-lg);
   padding: 2rem;
   text-align: center;
-  background: rgba(31, 41, 61, 0.3);
+  background: var(--bg-card);
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -1016,4 +1016,100 @@ table.orders-table tr:hover td {
 .col-select {
   width: 42px;
   text-align: center;
+}
+
+/* ── Paginação ───────────────────────────────────────────── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.pagination-info {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pagination-size select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-family: inherit;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+
+.pagination-size select:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+/* Corrige cor de texto em campos de formulário no tema claro */
+[data-theme="light"] .form-group input,
+[data-theme="light"] .form-group select,
+[data-theme="light"] .form-group textarea,
+[data-theme="light"] .search-box input,
+[data-theme="light"] .items-edit-table input {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+[data-theme="light"] .form-group input::placeholder,
+[data-theme="light"] .search-box input::placeholder {
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .modal-header,
+[data-theme="light"] .modal-footer {
+  background: var(--bg-card);
+}
+
+[data-theme="light"] .items-edit-table input {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .preview-tag {
+  background: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .badge-dimensao {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+[data-theme="light"] #skus-table-body tr:hover {
+  background: var(--bg-card-hover);
 }
