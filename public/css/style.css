@@ -98,6 +98,21 @@ header.app-header {
   top: 0;
   z-index: 100;
   padding: 0.85rem 2rem;
+  transition: background 0.3s ease;
+}
+
+[data-theme="light"] header.app-header {
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="light"] .brand-logo-badge {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: var(--accent-gold);
+}
+
+[data-theme="light"] .brand-logo-badge span.brand-title {
+  color: #0f172a;
 }
 
 .header-container {
@@ -1096,8 +1111,22 @@ table.orders-table tr:hover td {
   background: var(--bg-card);
 }
 
+[data-theme="light"] .modal-container {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+[data-theme="light"] .modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
 [data-theme="light"] .items-edit-table input {
   color: var(--text-primary);
+}
+
+[data-theme="light"] .items-edit-table td {
+  background: var(--bg-card);
+  border-color: var(--border-color);
 }
 
 [data-theme="light"] .preview-tag {
@@ -1112,4 +1141,40 @@ table.orders-table tr:hover td {
 
 [data-theme="light"] #skus-table-body tr:hover {
   background: var(--bg-card-hover);
+}
+
+[data-theme="light"] .pagination-size select,
+[data-theme="light"] .pagination-bar {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .bulk-actions-bar {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+}
+
+[data-theme="light"] .table-card {
+  background: var(--bg-secondary);
+}
+
+[data-theme="light"] table.orders-table th {
+  background: var(--bg-card);
+}
+
+[data-theme="light"] table.orders-table td {
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="light"] .filter-pill {
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .stat-card {
+  background: var(--bg-secondary);
+}
+
+[data-theme="light"] .toolbar-section {
+  background: var(--bg-secondary);
 }

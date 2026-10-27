@@ -1,5 +1,15 @@
 // app.js - Controlador Principal da Aplicação O.S. Marca Vento
 
+// Escapa texto vindo do banco/Moskit antes de interpolar em innerHTML
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const App = {
   orders: [],
   settings: {},
@@ -203,6 +213,7 @@ const App = {
         this.totalOrders = data.total || 0;
         this.totalPages = data.totalPages || 1;
         this.currentPage = data.page || 1;
+        this.stats = data.stats || null;
         this.renderOrdersTable();
         this.renderPagination();
         this.updateStats();
@@ -217,9 +228,11 @@ const App = {
   // ==========================================
 
   updateStats() {
+    // Usa os totais do servidor (todas as páginas do filtro), não só a página atual
+    const s = this.stats || {};
     document.getElementById('stat-total-orders').textContent = this.totalOrders || this.orders.length;
-    document.getElementById('stat-won-deals').textContent = this.orders.filter(o => o.status === 'won').length;
-    document.getElementById('stat-with-photo').textContent = this.orders.filter(o => o.photo_filename).length;
+    document.getElementById('stat-won-deals').textContent = s.won ?? this.orders.filter(o => o.status === 'won').length;
+    document.getElementById('stat-with-photo').textContent = s.withPhoto ?? this.orders.filter(o => o.photo_filename).length;
   },
 
   renderPagination() {
@@ -300,12 +313,12 @@ const App = {
         <td class="col-select">
           <input type="checkbox" class="chk-order-row" data-id="${order.id}" ${isChecked ? 'checked' : ''}>
         </td>
-        <td><span class="badge-budget">${order.orcamento_numero}</span></td>
-        <td><small style="color: var(--text-secondary);">${order.data_os}</small></td>
+        <td><span class="badge-budget">${escapeHtml(order.orcamento_numero)}</span></td>
+        <td><small style="color: var(--text-secondary);">${escapeHtml(order.data_os)}</small></td>
         <td>
           <div class="client-name-cell">
-            <strong>${order.nome_fantasia || 'Cliente Não Informado'}</strong>
-            <small>${order.cnpj_cpf ? 'Doc: ' + order.cnpj_cpf : (order.contato_nome || '')}</small>
+            <strong>${escapeHtml(order.nome_fantasia || 'Cliente Não Informado')}</strong>
+            <small>${escapeHtml(order.cnpj_cpf ? 'Doc: ' + order.cnpj_cpf : (order.contato_nome || ''))}</small>
           </div>
         </td>
         <td>
@@ -313,8 +326,8 @@ const App = {
         </td>
         <td>
           <div style="font-size: 0.8rem; display: flex; flex-direction: column;">
-            <span>Entrega: <strong>${order.data_entrega || '--/--/----'}</strong></span>
-            <small style="color: var(--text-muted);">${order.forma_pagamento || ''} (${order.prazo_pagamento || ''})</small>
+            <span>Entrega: <strong>${escapeHtml(order.data_entrega || '--/--/----')}</strong></span>
+            <small style="color: var(--text-muted);">${escapeHtml(order.forma_pagamento || '')} (${escapeHtml(order.prazo_pagamento || '')})</small>
           </div>
         </td>
         <td>${photoHtml}</td>
@@ -324,7 +337,7 @@ const App = {
             <button class="btn btn-secondary btn-sm" onclick="App.openPrintPreview(${order.id})" title="Visualizar e Imprimir O.S.">
               🖨️ Imprimir
             </button>
-            <button class="btn btn-outline-gold btn-sm" onclick="App.openPrintPreview(${order.id})" title="Baixar PDF">
+            <button class="btn btn-outline-gold btn-sm" onclick="PrintManager.downloadPdf(${order.id})" title="Baixar PDF">
               📥 PDF
             </button>
             <button class="btn btn-secondary btn-sm btn-icon" onclick="App.openEditModal(${order.id})" title="Editar">
@@ -391,10 +404,10 @@ const App = {
       
       card.innerHTML = `
         <div>
-          <strong style="font-size: 1rem; color: var(--text-primary);">${t.name}</strong>
+          <strong style="font-size: 1rem; color: var(--text-primary);">${escapeHtml(t.name)}</strong>
           ${t.is_default ? '<span class="status-badge status-won" style="margin-left: 0.5rem;">Padrão Ativo</span>' : ''}
           <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem;">
-            Arquivo: ${t.filename}
+            Arquivo: ${escapeHtml(t.filename)}
           </div>
         </div>
         <div style="display: flex; gap: 0.5rem;">
@@ -536,7 +549,8 @@ const App = {
     document.getElementById('btn-pdf-selected')?.addEventListener('click', () => {
       const ids = Array.from(this.selectedIds);
       if (!ids.length) return this.showToast('Selecione pelo menos uma O.S.', 'error');
-      ids.forEach(id => PrintManager.downloadPdf(id));
+      // PDF agora é gerado pela janela de impressão: uma única chamada com todas as O.S.
+      PrintManager.printSelected(ids);
     });
 
     document.getElementById('btn-delete-selected')?.addEventListener('click', async () => {
@@ -762,7 +776,7 @@ const App = {
       if (!data.success) return this.showToast('Erro ao carregar dados da O.S.', 'error');
 
       const o = data.order;
-      document.getElementById('modal-order-title').innerHTML = `<span>✏️</span> Editar O.S. Nº ${o.orcamento_numero}`;
+      document.getElementById('modal-order-title').innerHTML = `<span>✏️</span> Editar O.S. Nº ${escapeHtml(o.orcamento_numero)}`;
       document.getElementById('order-id').value = o.id;
       document.getElementById('order-moskit-id').value = o.moskit_deal_id || '';
       document.getElementById('order-orcamento').value = o.orcamento_numero;
@@ -817,13 +831,13 @@ const App = {
     const tbody = document.getElementById('order-items-tbody');
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" list="skus-datalist" class="item-sku" value="${item.sku || ''}" placeholder="ex: WBB200FDSO" onchange="App.onSkuChange(this)"></td>
-      <td><input type="text" class="item-qtde" value="${item.qtde || '1'}" placeholder="1"></td>
-      <td><input type="text" class="item-prod" value="${item.prod || ''}" placeholder="Nome do produto"></td>
-      <td><input type="text" class="item-modelo" value="${item.modelo || ''}" placeholder="ex: Pena, Box"></td>
-      <td><input type="text" class="item-dimensao" value="${item.dimensao || ''}" placeholder="ex: 2,00"></td>
-      <td><input type="text" class="item-posicao" value="${item.posicao || ''}" placeholder="ex: Face Dupla"></td>
-      <td><input type="text" class="item-base" value="${item.base || ''}" placeholder="ex: Solo, Plástica"></td>
+      <td><input type="text" list="skus-datalist" class="item-sku" value="${escapeHtml(item.sku || '')}" placeholder="ex: WBB200FDSO" onchange="App.onSkuChange(this)"></td>
+      <td><input type="text" class="item-qtde" value="${escapeHtml(item.qtde || '1')}" placeholder="1"></td>
+      <td><input type="text" class="item-prod" value="${escapeHtml(item.prod || '')}" placeholder="Nome do produto"></td>
+      <td><input type="text" class="item-modelo" value="${escapeHtml(item.modelo || '')}" placeholder="ex: Pena, Box"></td>
+      <td><input type="text" class="item-dimensao" value="${escapeHtml(item.dimensao || '')}" placeholder="ex: 2,00"></td>
+      <td><input type="text" class="item-posicao" value="${escapeHtml(item.posicao || '')}" placeholder="ex: Face Dupla"></td>
+      <td><input type="text" class="item-base" value="${escapeHtml(item.base || '')}" placeholder="ex: Solo, Plástica"></td>
       <td style="text-align: center;">
         <button type="button" class="btn btn-danger btn-sm btn-icon" onclick="this.closest('tr').remove()" title="Excluir item">🗑️</button>
       </td>
@@ -967,10 +981,14 @@ const App = {
       if (this.selectedPhotoFile) {
         const formData = new FormData();
         formData.append('photo', this.selectedPhotoFile);
-        await fetch(`/api/orders/${savedOrder.id}/photo`, {
+        const photoRes = await fetch(`/api/orders/${savedOrder.id}/photo`, {
           method: 'POST',
           body: formData
         });
+        const photoData = await photoRes.json().catch(() => ({}));
+        if (!photoData.success) {
+          this.showToast('O.S. salva, mas a foto não foi enviada: ' + (photoData.error || 'erro no upload'), 'error');
+        }
       }
 
       document.getElementById('modal-order').classList.remove('active');

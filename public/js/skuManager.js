@@ -70,13 +70,13 @@ const SkuManager = {
     this.skus.forEach(s => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><strong style="color: var(--accent-gold); font-family: monospace; font-size: 0.95rem;">${s.sku}</strong></td>
-        <td><strong>${s.prod || '-'}</strong></td>
-        <td>${s.modelo || '-'}</td>
-        <td><span class="badge-dimensao">${s.dimensao || '-'}</span></td>
-        <td>${s.posicao || '-'}</td>
-        <td>${s.base || '-'}</td>
-        <td><small style="color: var(--text-muted);">${s.descricao || '-'}</small></td>
+        <td><strong style="color: var(--accent-gold); font-family: monospace; font-size: 0.95rem;">${escapeHtml(s.sku)}</strong></td>
+        <td><strong>${escapeHtml(s.prod || '-')}</strong></td>
+        <td>${escapeHtml(s.modelo || '-')}</td>
+        <td><span class="badge-dimensao">${escapeHtml(s.dimensao || '-')}</span></td>
+        <td>${escapeHtml(s.posicao || '-')}</td>
+        <td>${escapeHtml(s.base || '-')}</td>
+        <td><small style="color: var(--text-muted);">${escapeHtml(s.descricao || '-')}</small></td>
         <td style="text-align: right; white-space: nowrap;">
           <button type="button" class="btn btn-secondary btn-sm btn-icon" onclick="SkuManager.openEditModal(${s.id})" title="Editar SKU">✏️</button>
           <button type="button" class="btn btn-danger btn-sm btn-icon" onclick="SkuManager.deleteSku(${s.id}, '${s.sku}')" title="Excluir SKU">🗑️</button>

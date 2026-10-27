@@ -35,9 +35,20 @@ const photoStorage = multer.diskStorage({
     cb(null, uniqueName);
   }
 });
+// Only accept raster images (blocks .html/.svg uploads being served from /uploads)
+const imageFileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext) && /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Apenas imagens JPG, PNG, WEBP ou GIF são permitidas.'));
+  }
+};
+
 const uploadPhoto = multer({
   storage: photoStorage,
-  limits: { fileSize: 25 * 1024 * 1024 } // 25MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+  fileFilter: imageFileFilter
 });
 
 // Configure Multer for PDF template uploads
@@ -78,7 +89,8 @@ const logoStorage = multer.diskStorage({
 });
 const uploadLogo = multer({
   storage: logoStorage,
-  limits: { fileSize: 8 * 1024 * 1024 }
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: imageFileFilter
 });
 
 // ==========================================
@@ -559,6 +571,12 @@ app.post('/api/test/simulate-deal', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// Upload/validation errors (multer) must reach the frontend as JSON
+app.use((err, req, res, next) => {
+  const status = err instanceof multer.MulterError ? 400 : (err.status || 400);
+  res.status(status).json({ success: false, error: err.message });
 });
 
 // Start server

@@ -70,12 +70,12 @@ const PrintManager = {
         const hasData = item && (item.qtde || item.prod || item.modelo || item.dimensao || item.posicao || item.base);
         tr.innerHTML = hasData
           ? `
-            <td class="col-qtde">${item.qtde || ''}</td>
-            <td class="col-prod">${item.prod || ''}</td>
-            <td class="col-modelo">${item.modelo || ''}</td>
-            <td class="col-dimensao">${item.dimensao || ''}</td>
-            <td class="col-posicao">${item.posicao || ''}</td>
-            <td class="col-base">${item.base || ''}</td>
+            <td class="col-qtde">${escapeHtml(item.qtde || '')}</td>
+            <td class="col-prod">${escapeHtml(item.prod || '')}</td>
+            <td class="col-modelo">${escapeHtml(item.modelo || '')}</td>
+            <td class="col-dimensao">${escapeHtml(item.dimensao || '')}</td>
+            <td class="col-posicao">${escapeHtml(item.posicao || '')}</td>
+            <td class="col-base">${escapeHtml(item.base || '')}</td>
           `
           : `
             <td class="col-qtde">&nbsp;</td>
@@ -147,44 +147,21 @@ const PrintManager = {
     try {
       const order = await this.loadOrder(id);
       this.renderOrderToSheet(order);
-      await this.exportSheetToPdf(order);
+      // Aguarda carregamento das imagens antes de imprimir
+      const sheet = document.getElementById('os-print-sheet');
+      if (sheet) await this.waitForImages(sheet);
+      const modal = document.getElementById('modal-print-preview');
+      if (modal && !modal.classList.contains('active')) {
+        modal.classList.add('active');
+      }
+      await new Promise(r => setTimeout(r, 180));
+      window.print();
     } catch (e) {
       console.error(e);
       if (typeof App !== 'undefined' && App.showToast) {
         App.showToast('Erro ao gerar PDF: ' + e.message, 'error');
       }
     }
-  },
-
-  async exportSheetToPdf(order) {
-    const sheet = document.getElementById('os-print-sheet');
-    if (!sheet || typeof html2canvas === 'undefined' || !window.jspdf) {
-      window.open(`/api/orders/${order.id}/pdf`, '_blank');
-      return;
-    }
-
-    const modal = document.getElementById('modal-print-preview');
-    const wasOpen = modal?.classList.contains('active');
-    if (modal && !wasOpen) modal.classList.add('active');
-
-    await this.waitForImages(sheet);
-    await new Promise((r) => setTimeout(r, 120));
-
-    const canvas = await html2canvas(sheet, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false
-    });
-
-    if (modal && !wasOpen) modal.classList.remove('active');
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-    const safeName = String(order.orcamento_numero || order.id).replace(/[^a-zA-Z0-9_-]/g, '_');
-    pdf.save(`OS_${safeName}.pdf`);
   },
 
   async printSelected(ids) {
@@ -244,12 +221,12 @@ const PrintManager = {
       rows.forEach((item) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="col-qtde">${item.qtde || ''}</td>
-          <td class="col-prod">${item.prod || ''}</td>
-          <td class="col-modelo">${item.modelo || ''}</td>
-          <td class="col-dimensao">${item.dimensao || ''}</td>
-          <td class="col-posicao">${item.posicao || ''}</td>
-          <td class="col-base">${item.base || ''}</td>
+          <td class="col-qtde">${escapeHtml(item.qtde || '')}</td>
+          <td class="col-prod">${escapeHtml(item.prod || '')}</td>
+          <td class="col-modelo">${escapeHtml(item.modelo || '')}</td>
+          <td class="col-dimensao">${escapeHtml(item.dimensao || '')}</td>
+          <td class="col-posicao">${escapeHtml(item.posicao || '')}</td>
+          <td class="col-base">${escapeHtml(item.base || '')}</td>
         `;
         this.applyHighlightCell(tr.querySelector('.col-qtde'),    g.qtde);
         this.applyHighlightCell(tr.querySelector('.col-modelo'),   g.modelo);

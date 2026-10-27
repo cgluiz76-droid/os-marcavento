@@ -17,12 +17,17 @@
 /* Folha A4 Exata */
 .os-a4-sheet {
   width: 210mm;
-  min-height: 297mm;
+  /* Altura fixa: a foto ocupa só o espaço que sobra, igual na tela e no PDF */
+  height: 297mm;
   background: #ffffff;
   color: #000000;
   padding: 12mm 14mm 10mm 14mm;
   box-sizing: border-box;
   font-family: Arial, Helvetica, sans-serif;
+  /* Mantém cores de fundo (grifo amarelo, cabeçalho da tabela) no PDF/impressão,
+     mesmo com "Gráficos de plano de fundo" desmarcado no navegador */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
@@ -178,26 +183,31 @@
 
 /* Área Central da Foto */
 .os-artwork-container {
-  flex: 1;
-  min-height: 120mm;
-  max-height: 155mm;
+  flex: 1 1 0;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 1mm;
   margin: 1mm 0 2mm 0;
   overflow: hidden;
   position: relative;
+  min-height: 60mm;
 }
 
+/* Posição absoluta: o tamanho natural da imagem não empurra o layout,
+   ela é sempre encaixada inteira (contain) na área disponível */
 .os-artwork-container img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
   object-position: center;
   display: block;
+}
+
+/* Contêiner das folhas da impressão em lote: só existe no papel */
+#print-batch-root {
+  display: none;
 }
 
 .os-artwork-empty {
@@ -266,6 +276,9 @@
     box-shadow: none !important;
     max-width: 100% !important;
     width: 100% !important;
+    /* Sem isso o 90vh da tela corta a parte de baixo da folha (foto e rodapé) */
+    max-height: none !important;
+    overflow: visible !important;
     background: transparent !important;
     transform: none !important;
   }
@@ -283,12 +296,39 @@
 
   .os-a4-sheet {
     width: 210mm !important;
-    min-height: 297mm !important;
+    /* 1mm a menos que o A4 evita uma página em branco extra por arredondamento */
+    height: 296mm !important;
+    min-height: 0 !important;
     margin: 0 auto !important;
     box-shadow: none !important;
     page-break-after: avoid !important;
     page-break-inside: avoid !important;
     box-sizing: border-box !important;
     padding: 10mm 12mm 8mm 12mm !important;
+  }
+
+  .os-a4-sheet,
+  .os-a4-sheet * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Impressão em lote: imprime só as folhas clonadas, uma por página */
+  body.printing-batch .modal-backdrop {
+    display: none !important;
+  }
+
+  body.printing-batch #print-batch-root {
+    display: block !important;
+  }
+
+  body.printing-batch #print-batch-root .os-a4-sheet {
+    page-break-after: always !important;
+    break-after: page;
+  }
+
+  body.printing-batch #print-batch-root .os-a4-sheet:last-child {
+    page-break-after: avoid !important;
+    break-after: auto;
   }
 }

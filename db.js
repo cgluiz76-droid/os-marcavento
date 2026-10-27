@@ -425,6 +425,9 @@ function createOrder(orderData, items = []) {
   if (!orcamentoNumero || orcamentoNumero.trim() === '') {
     const seq = getNextOrcamentoNumero(true);
     orcamentoNumero = seq.numero;
+  } else if (orcamentoNumero.trim() === getNextOrcamentoNumero(false).numero) {
+    // Form pre-filled with the next sequential number: consume it so it isn't reused
+    getNextOrcamentoNumero(true);
   }
 
   const defaultTmpl = getDefaultTemplate();
