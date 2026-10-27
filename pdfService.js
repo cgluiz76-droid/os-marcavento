@@ -209,7 +209,7 @@ async function generateServiceOrderPdf(orderId) {
   // FOTO
   const photoAreaH = curY - bottomLimit;
   if (order.photo_filename && photoAreaH > 20) {
-    const photoPath = path.join(__dirname, 'uploads', order.photo_filename);
+    const photoPath = db.uploadPath(order.photo_filename);
     if (fs.existsSync(photoPath)) {
       try {
         const photoBytes = fs.readFileSync(photoPath);

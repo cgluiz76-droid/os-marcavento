@@ -10,6 +10,19 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
+// Uploads ficam dentro de data/ para que um único volume persistente
+// (Railway: /app/data) guarde banco e fotos. A pasta antiga continua lida.
+const UPLOADS_DIR = path.join(dataDir, 'uploads');
+const LEGACY_UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function uploadPath(filename) {
+  const current = path.join(UPLOADS_DIR, filename);
+  return fs.existsSync(current) ? current : path.join(LEGACY_UPLOADS_DIR, filename);
+}
+
 const db = new DatabaseSync(DB_PATH);
 
 // Initialize Tables
@@ -574,7 +587,7 @@ function deleteOrder(id) {
 
   // Remove photo if exists
   if (order.photo_filename) {
-    const photoPath = path.join(__dirname, 'uploads', order.photo_filename);
+    const photoPath = uploadPath(order.photo_filename);
     if (fs.existsSync(photoPath)) {
       try { fs.unlinkSync(photoPath); } catch (e) { console.error('Erro ao deletar foto:', e); }
     }
@@ -591,7 +604,7 @@ function setOrderPhoto(id, photoFilename) {
 
   // If previous photo exists and is different, remove old
   if (existing.photo_filename && existing.photo_filename !== photoFilename) {
-    const oldPath = path.join(__dirname, 'uploads', existing.photo_filename);
+    const oldPath = uploadPath(existing.photo_filename);
     if (fs.existsSync(oldPath)) {
       try { fs.unlinkSync(oldPath); } catch (e) {}
     }
@@ -607,7 +620,7 @@ function removeOrderPhoto(id) {
   if (!existing) return null;
 
   if (existing.photo_filename) {
-    const oldPath = path.join(__dirname, 'uploads', existing.photo_filename);
+    const oldPath = uploadPath(existing.photo_filename);
     if (fs.existsSync(oldPath)) {
       try { fs.unlinkSync(oldPath); } catch (e) {}
     }
@@ -677,6 +690,9 @@ function deleteProductSku(id) {
 
 module.exports = {
   db,
+  UPLOADS_DIR,
+  LEGACY_UPLOADS_DIR,
+  uploadPath,
   getSettings,
   getSetting,
   setSetting,

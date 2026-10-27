@@ -19,15 +19,14 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(db.UPLOADS_DIR));
+app.use('/uploads', express.static(db.LEGACY_UPLOADS_DIR));
 app.use('/templates', express.static(path.join(__dirname, 'templates')));
 
 // Configure Multer for photo uploads
 const photoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
+    cb(null, db.UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -38,7 +37,7 @@ const photoStorage = multer.diskStorage({
 // Only accept raster images (blocks .html/.svg uploads being served from /uploads)
 const imageFileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext) && /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
+  if (['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif'].includes(ext) && /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Apenas imagens JPG, PNG, WEBP ou GIF são permitidas.'));
@@ -78,9 +77,7 @@ const uploadTemplate = multer({
 
 const logoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
+    cb(null, db.UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname) || '.png';
@@ -130,7 +127,7 @@ app.post('/api/settings/logo', uploadLogo.single('logo'), (req, res) => {
     }
     const previous = db.getSetting('company_logo', '');
     if (previous) {
-      const prevPath = path.join(__dirname, 'uploads', previous);
+      const prevPath = db.uploadPath(previous);
       if (fs.existsSync(prevPath) && previous !== req.file.filename) {
         try { fs.unlinkSync(prevPath); } catch (e) { /* ignore */ }
       }
@@ -151,7 +148,7 @@ app.delete('/api/settings/logo', (req, res) => {
   try {
     const previous = db.getSetting('company_logo', '');
     if (previous) {
-      const prevPath = path.join(__dirname, 'uploads', previous);
+      const prevPath = db.uploadPath(previous);
       if (fs.existsSync(prevPath)) {
         try { fs.unlinkSync(prevPath); } catch (e) { /* ignore */ }
       }
