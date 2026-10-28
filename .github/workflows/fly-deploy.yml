@@ -1,0 +1,33 @@
+# Publica no Fly.io a cada push na branch main.
+# Os dados (banco + fotos) ficam no volume os_data e não são afetados pelo deploy.
+# Requer o segredo FLY_API_TOKEN no GitHub (Settings > Secrets and variables > Actions).
+name: Fly Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: fly-deploy
+
+jobs:
+  deploy:
+    name: Deploy no Fly.io
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Seguro extra: snapshot do volume imediatamente antes do deploy
+      - name: Snapshot do volume de dados
+        continue-on-error: true
+        run: |
+          VOL_ID=$(flyctl volumes list -a os-marcavento --json | jq -r '.[] | select(.name=="os_data") | .id' | head -n1)
+          echo "Volume: $VOL_ID"
+          flyctl volumes snapshots create "$VOL_ID" -a os-marcavento
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --ha=false

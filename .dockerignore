@@ -26,3 +26,4 @@ Thumbs.db
 # Git e PDFs de referência da raiz não vão para a imagem
 .git/
 /OS MARCAVENTO*.pdf
+.github/
