@@ -1,10 +1,10 @@
 # Dependências
 node_modules/
 
-# Banco de dados local (ficará no volume persistente do Railway)
+# Banco de dados local (volume persistente do Fly.io em /app/data)
 data/
 
-# Uploads de fotos e logos (ficará no volume persistente do Railway)
+# Uploads de fotos e logos (volume persistente do Fly.io em /app/data)
 uploads/
 
 # Logs
