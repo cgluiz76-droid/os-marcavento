@@ -4,9 +4,21 @@
 #
 
 app = 'os-marcavento'
-primary_region = 'ams'
+# São Paulo: mais perto dos usuários e do Moskit
+primary_region = 'gru'
 
 [build]
+
+[env]
+  # server.js escuta em process.env.PORT (padrão 3000); precisa bater com internal_port
+  PORT = '8080'
+
+# Banco SQLite e fotos ficam em /app/data. Sem este volume, tudo seria apagado
+# a cada deploy e a cada vez que a máquina para por inatividade.
+[mounts]
+  source = 'os_data'
+  destination = '/app/data'
+  initial_size = '1gb'
 
 [http_service]
   internal_port = 8080
@@ -17,7 +29,6 @@ primary_region = 'ams'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256

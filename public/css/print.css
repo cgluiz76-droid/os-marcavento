@@ -245,7 +245,7 @@
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
-    height: 100% !important;
+    height: auto !important;
   }
 
   /* Ocultar toda a interface comum */
@@ -292,6 +292,27 @@
     background: transparent !important;
     padding: 0 !important;
     display: block !important;
+    /* O overflow-x:auto da tela gera uma barra de rolagem de ~2mm no papel,
+       que passa do A4 e joga o rodapé para uma segunda página */
+    overflow: visible !important;
+  }
+
+  /* Só a folha ocupa espaço: nada de altura mínima de tela nem outros modais */
+  body {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  .modal-backdrop:not(.print-preview-modal) {
+    display: none !important;
+  }
+
+  .print-preview-modal,
+  .print-preview-modal .modal-container,
+  .print-preview-modal .modal-body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   .os-a4-sheet {

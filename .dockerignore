@@ -1,10 +1,10 @@
 # Dependências
 node_modules/
 
-# Banco de dados local (ficará no volume persistente do Railway)
+# Banco de dados local (fica no volume persistente, fora da imagem)
 data/
 
-# Uploads de fotos e logos (ficará no volume persistente do Railway)
+# Uploads de fotos e logos (fica no volume persistente, fora da imagem)
 uploads/
 
 # Logs
@@ -22,3 +22,7 @@ Thumbs.db
 # Editor
 .vscode/
 *.swp
+
+# Git e PDFs de referência da raiz não vão para a imagem
+.git/
+/OS MARCAVENTO*.pdf
