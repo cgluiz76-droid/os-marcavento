@@ -336,6 +336,15 @@ function parseOrderDate(value) {
   return Number.isNaN(ts) ? null : new Date(ts);
 }
 
+// Chave de ordenação do Nº do orçamento ("5248/26" -> ano 26, número 5248)
+function orcamentoSortKey(numero) {
+  const str = String(numero || '').trim();
+  const num = parseInt((str.match(/\d+/) || ['0'])[0], 10);
+  const yearMatch = str.match(/\/\s*(\d{2,4})\s*$/);
+  const year = yearMatch ? parseInt(yearMatch[1].slice(-2), 10) : 0;
+  return { year, num };
+}
+
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
@@ -388,6 +397,13 @@ function getOrders(search = '', status = '', options = {}) {
       return true;
     });
   }
+
+  // Nº da O.S. em ordem decrescente (o id interno não acompanha números digitados ou restaurados)
+  orders.sort((a, b) => {
+    const ka = orcamentoSortKey(a.orcamento_numero);
+    const kb = orcamentoSortKey(b.orcamento_numero);
+    return (kb.year - ka.year) || (kb.num - ka.num) || (b.id - a.id);
+  });
 
   const stats = {
     total: orders.length,
