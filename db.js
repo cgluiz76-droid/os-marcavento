@@ -10,6 +10,13 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
+// No Fly.io, data/ precisa ser o volume persistente (dispositivo diferente de /app).
+// Sem ele, banco e fotos seriam apagados no próximo deploy: melhor não iniciar.
+if (process.env.FLY_APP_NAME && fs.statSync(dataDir).dev === fs.statSync(__dirname).dev) {
+  console.error(`[ERRO] ${dataDir} não é um volume persistente. Configure [mounts] no fly.toml. Encerrando para não perder dados.`);
+  process.exit(1);
+}
+
 // Uploads ficam dentro de data/ para que um único volume persistente
 // (Railway: /app/data) guarde banco e fotos. A pasta antiga continua lida.
 const UPLOADS_DIR = path.join(dataDir, 'uploads');
