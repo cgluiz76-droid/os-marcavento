@@ -317,8 +317,12 @@
 
   .os-a4-sheet {
     width: 210mm !important;
-    /* 1mm a menos que o A4 evita uma página em branco extra por arredondamento */
+    /* Altura da área útil do papel em uso (A4, Carta, com margens da impressora):
+       a área da foto encolhe e o rodapé fica sempre na mesma página.
+       296mm é o valor para navegadores sem suporte; 1mm a menos evita página extra */
     height: 296mm !important;
+    height: calc(100vh - 1mm) !important;
+    max-height: 296mm !important;
     min-height: 0 !important;
     margin: 0 auto !important;
     box-shadow: none !important;
