@@ -680,7 +680,7 @@ async function buildPreview(dealId) {
       if (fp) p.formaPagamento = { id: fp };
       return p;
     })()],
-    observacoesInternas: `Criado via OS Marca Vento a partir do negócio Moskit #${id}`
+    observacoesInternas: `Criado via Automação Moskit-Bling em ${new Date().toISOString()} (negócio Moskit #${id})`
   };
   if (dataPrevista) payload.dataPrevista = dataPrevista;
   if (observacoes) payload.observacoes = observacoes;
