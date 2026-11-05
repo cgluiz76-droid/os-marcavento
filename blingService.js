@@ -56,7 +56,8 @@ function toIsoDate(value) {
   const s = String(value).trim();
   const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const isoPrefix = s.match(/^(\d{4}-\d{2}-\d{2})(?:$|T00:00:00(?:\.0+)?(?:Z|[+-]00:?00)?$)/);
+  if (isoPrefix) return isoPrefix[1];
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '';
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
@@ -342,24 +343,101 @@ async function listVendedores() {
 // Montagem do pedido (preview ORIGEM -> DESTINO)
 // ==========================================================
 
+function flattenCustomFields(list, target) {
+  if (!Array.isArray(list)) return;
+  for (const cf of list) {
+    if (!cf || typeof cf !== 'object') continue;
+    const def = cf.customField || cf.field || {};
+    const keys = [def.id, def.key, def.name, cf.id, cf.key].filter(k => k !== undefined && k !== null && k !== '');
+    let val = cf.value;
+    if (val === undefined || val === null || val === '') val = cf.textValue ?? cf.numericValue ?? cf.dateValue ?? cf.options ?? '';
+    if (Array.isArray(val)) val = val.map(v => (v && typeof v === 'object') ? (v.label || v.name || v.value || v.id) : v).join(', ');
+    else if (val && typeof val === 'object') val = val.label || val.name || val.value || val.id || '';
+    for (const k of keys) if (!(String(k) in target)) target[String(k)] = val;
+  }
+}
+
 function buildContext(deal) {
-  // Mesma normalização de campos personalizados usada pela O.S.
+  // Mesma normalização de campos personalizados usada pela O.S., mais o formato
+  // real da API v2 do Moskit (entityCustomFields)
   const flatCustomFields = {};
   if (Array.isArray(deal.customFields)) {
-    for (const cf of deal.customFields) {
-      const k = cf.customField ? (cf.customField.id || cf.customField.key || cf.customField.name) : (cf.id || cf.key);
-      const val = cf.value !== undefined ? cf.value : (cf.textValue || cf.numericValue || cf.dateValue);
-      if (k) flatCustomFields[k] = val;
-    }
+    flattenCustomFields(deal.customFields, flatCustomFields);
   } else if (deal.customFields && typeof deal.customFields === 'object') {
     Object.assign(flatCustomFields, deal.customFields);
   }
+  flattenCustomFields(deal.entityCustomFields, flatCustomFields);
+
+  const company = deal.company || (Array.isArray(deal.companies) && deal.companies[0]) || {};
+  const contact = deal.contact || (Array.isArray(deal.contacts) && deal.contacts[0]) || {};
+  const companyCustom = {};
+  const contactCustom = {};
+  flattenCustomFields(company.entityCustomFields, companyCustom);
+  flattenCustomFields(contact.entityCustomFields, contactCustom);
   return {
     deal,
-    company: deal.company || {},
-    contact: deal.contact || {},
+    company: { ...company, customFields: companyCustom },
+    contact: { ...contact, customFields: contactCustom },
     customFields: flatCustomFields
   };
+}
+
+// A API v2 do Moskit devolve empresa/contato como lista resumida (só o id preenchido).
+// Busca os cadastros completos para ler CNPJ/CPF, telefone etc. (somente leitura).
+async function hydrateParties(deal) {
+  const pick = (one, many) => one && one.id ? one : (Array.isArray(many) && many[0] && many[0].id ? many[0] : null);
+  const comp = pick(deal.company, deal.companies);
+  if (comp && !comp.cnpj && !comp.name) {
+    try { deal.company = { ...comp, ...(await moskitService.moskitFetch(`/companies/${comp.id}`)) }; } catch (e) { /* segue sem */ }
+  } else if (comp) deal.company = comp;
+  const cont = pick(deal.contact, deal.contacts);
+  if (cont && !cont.cpf && !cont.name) {
+    try { deal.contact = { ...cont, ...(await moskitService.moskitFetch(`/contacts/${cont.id}`)) }; } catch (e) { /* segue sem */ }
+  } else if (cont) deal.contact = cont;
+
+  // Produtos sem SKU no retorno do negócio: busca o cadastro do produto (sem sobrescrever com vazio)
+  const prods = Array.isArray(deal.dealProducts) ? deal.dealProducts : [];
+  for (const dp of prods) {
+    if (!dp || !dp.product || !dp.product.id || dp.product.sku) continue;
+    try {
+      const full = await moskitService.fetchProductById(dp.product.id);
+      if (full) {
+        for (const [k, v] of Object.entries(full)) {
+          if (v !== null && v !== undefined && v !== '' && (dp.product[k] === null || dp.product[k] === undefined || dp.product[k] === '')) dp.product[k] = v;
+        }
+      }
+    } catch (e) { /* segue sem */ }
+  }
+  return deal;
+}
+
+// Lista os campos com valor vindos do Moskit (ajuda a montar o mapeamento)
+function listAvailableFields(ctx) {
+  const out = [];
+  const add = (prefix, obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === null || v === undefined || v === '' || typeof v === 'object') continue;
+      out.push({ caminho: `${prefix}.${k}`, valor: String(v).slice(0, 120) });
+    }
+  };
+  add('deal', ctx.deal);
+  add('company', ctx.company);
+  add('company.customFields', ctx.company.customFields);
+  add('contact', ctx.contact);
+  add('contact.customFields', ctx.contact.customFields);
+  add('customFields', ctx.customFields);
+  for (const [i, ph] of (ctx.contact.phones || []).entries()) add(`contact.phones[${i}]`, ph);
+  for (const [i, em] of (ctx.contact.emails || []).entries()) add(`contact.emails[${i}]`, em);
+  for (const [i, ph] of (ctx.company.phones || []).entries()) add(`company.phones[${i}]`, ph);
+  for (const [i, em] of (ctx.company.emails || []).entries()) add(`company.emails[${i}]`, em);
+  return out;
+}
+
+// O Moskit guarda valores em centavos (84700 = R$ 847,00)
+function moskitMoney(v) {
+  const n = parseNumber(v, 0);
+  return blingDb.getConfig('moskit_valores_centavos', 'true') === 'false' ? n : n / 100;
 }
 
 const FIELD_LABELS = {
@@ -389,7 +467,7 @@ async function buildPreview(dealId) {
   const linhas = [];
 
   // 1) Moskit (leitura) - mesma função já usada pela O.S.
-  const deal = await moskitService.fetchFullDeal(id);
+  const deal = await hydrateParties(await moskitService.fetchFullDeal(id));
   const ctx = buildContext(deal);
   const mappings = blingDb.getMappings();
   const mapBy = Object.fromEntries(mappings.map(m => [m.bling_field, m]));
@@ -496,7 +574,7 @@ async function buildPreview(dealId) {
       codigo: String(resolveItem('item.codigo') || '').trim().toUpperCase(),
       nomeMoskit: (dp.product && dp.product.name) || dp.name || '',
       quantidade: parseNumber(resolveItem('item.quantidade'), 1),
-      valor: round2(parseNumber(resolveItem('item.valor'), 0))
+      valor: round2(moskitMoney(resolveItem('item.valor')))
     };
   });
 
@@ -538,7 +616,7 @@ async function buildPreview(dealId) {
   });
 
   const total = round2(itens.reduce((s, i) => s + i.subtotal, 0));
-  const dealPrice = round2(parseNumber(deal.price, 0));
+  const dealPrice = round2(moskitMoney(deal.price));
   if (dealPrice > 0 && Math.abs(dealPrice - total) > 0.01) {
     avisos.push(`A soma dos itens (R$ ${total.toFixed(2)}) é diferente do valor do negócio no Moskit (R$ ${dealPrice.toFixed(2)}). Verifique descontos/frete.`);
   }
@@ -625,6 +703,7 @@ async function buildPreview(dealId) {
     contato: contatoInfo,
     contatoPayload,
     linhas,
+    camposMoskit: listAvailableFields(ctx),
     itens,
     total,
     erros,
