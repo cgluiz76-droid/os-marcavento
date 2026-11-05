@@ -31,6 +31,7 @@ const BlingManager = {
     document.getElementById('bling-btn-salvar-credenciais')?.addEventListener('click', () => this.saveCredenciais());
     document.getElementById('bling-btn-salvar-config')?.addEventListener('click', () => this.saveConfig());
     document.getElementById('bling-btn-carregar-opcoes')?.addEventListener('click', () => this.loadOpcoes());
+    document.getElementById('bling-btn-diagnostico')?.addEventListener('click', () => this.diagnostico());
 
     document.querySelectorAll('[data-bling-copy]').forEach(btn => {
       btn.addEventListener('click', () => this.copy(document.getElementById(btn.dataset.blingCopy)?.value || ''));
@@ -230,6 +231,27 @@ const BlingManager = {
       this.renderWebhookBox({ protegido: data.protegido, url: data.url });
       this.toast(data.protegido ? 'Proteção ativada. Atualize agora a URL no Moskit.' : 'Proteção desativada.', 'success');
     } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  async diagnostico() {
+    const box = document.getElementById('bling-diagnostico');
+    if (!box) return;
+    box.innerHTML = '<div class="bling-loading">Testando permissões no Bling (somente consultas)…</div>';
+    try {
+      const data = await this.api('/api/bling/diagnostico');
+      const rows = (data.permissoes || []).map(p => `<tr>
+        <td><strong>${this.esc(p.recurso)}</strong><small>${this.esc(p.usado)}</small></td>
+        <td>${p.ok ? '<span class="bling-pill ok">OK</span>' : `<span class="bling-pill erro">Sem permissão</span><small>${this.esc(p.erro || '')}</small>`}</td>
+      </tr>`).join('');
+      const faltam = (data.permissoes || []).filter(p => !p.ok).length;
+      box.innerHTML = `<div class="bling-box ${faltam ? 'aviso' : 'ok'}" style="margin-top: 0.75rem;">
+          <strong class="title">${faltam ? `⚠️ ${faltam} permissão(ões) faltando` : '✅ Todas as permissões de consulta estão OK'}</strong>
+          ${faltam ? 'Marque os itens abaixo no aplicativo do Bling, salve e clique em "Conectar ao Bling" novamente.' : 'As permissões de inclusão (contato e pedido) só são confirmadas no primeiro envio.'}
+        </div>
+        <div class="table-responsive"><table class="bling-table"><thead><tr><th>Permissão</th><th>Resultado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="bling-box erro">${this.esc(e.message)}</div>`;
+    }
   },
 
   async saveCredenciais() {

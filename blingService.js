@@ -272,7 +272,9 @@ async function blingFetch(method, endpoint, { query, body } = {}, attempt = 1) {
   try { json = text ? JSON.parse(text) : {}; } catch (e) { json = null; }
 
   if (!resp.ok) {
-    const err = new Error(`Bling (${resp.status}): ${formatBlingError(json, text.slice(0, 300) || resp.statusText)}`);
+    const base = formatBlingError(json, text.slice(0, 300) || resp.statusText);
+    const hint = resp.status === 403 ? ` [${method} ${endpoint}: o aplicativo do Bling não tem permissão para este recurso]` : '';
+    const err = new Error(`Bling (${resp.status}): ${base}${hint}`);
     err.status = resp.status;
     err.response = json || text;
     throw err;
@@ -736,7 +738,30 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
   }
 }
 
+// Testa, só com leituras, se o aplicativo tem permissão para cada recurso usado
+async function diagnosticarPermissoes() {
+  const testes = [
+    { recurso: 'Contatos (consultar)', usado: 'Identificar o cliente pelo CPF/CNPJ', endpoint: '/contatos', query: { limite: 1 } },
+    { recurso: 'Produtos (consultar)', usado: 'Encontrar os produtos pelo SKU', endpoint: '/produtos', query: { limite: 1 } },
+    { recurso: 'Pedidos de Venda (consultar)', usado: 'Evitar pedidos duplicados', endpoint: '/pedidos/vendas', query: { limite: 1 } },
+    { recurso: 'Situações (consultar)', usado: 'Listar as situações na Configuração (opcional)', endpoint: '/situacoes/modulos' },
+    { recurso: 'Formas de Pagamento (consultar)', usado: 'Lista da Configuração (opcional)', endpoint: '/formas-pagamentos', query: { limite: 1 } },
+    { recurso: 'Vendedores (consultar)', usado: 'Lista da Configuração (opcional)', endpoint: '/vendedores', query: { limite: 1 } }
+  ];
+  const resultados = [];
+  for (const t of testes) {
+    try {
+      await blingFetch('GET', t.endpoint, { query: t.query });
+      resultados.push({ recurso: t.recurso, usado: t.usado, ok: true });
+    } catch (e) {
+      resultados.push({ recurso: t.recurso, usado: t.usado, ok: false, status: e.status || null, erro: e.message });
+    }
+  }
+  return resultados;
+}
+
 module.exports = {
+  diagnosticarPermissoes,
   // OAuth
   getAuthStatus,
   startAuthorization,
