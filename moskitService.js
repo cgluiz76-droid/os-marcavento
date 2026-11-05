@@ -526,5 +526,6 @@ module.exports = {
   mapDealToServiceOrder,
   importDeal,
   syncWonDeals,
-  syncMoskitSkus
+  syncMoskitSkus,
+  resolvePath
 };

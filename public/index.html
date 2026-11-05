@@ -6,6 +6,7 @@
   <title>Sistema O.S. Marca Vento | Integração Moskit CRM</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/print.css">
+  <link rel="stylesheet" href="css/bling.css">
   <script>
     (function () {
       var t = localStorage.getItem('mv-theme') || 'dark';
@@ -44,6 +45,10 @@
 
         <button class="btn btn-primary" id="btn-new-order" title="Criar nova O.S. manualmente">
           <span>➕</span> Nova O.S.
+        </button>
+
+        <button class="btn btn-outline-gold" id="btn-open-bling" title="Conferir e enviar pedidos ao Bling">
+          <span>📦</span> Bling <span class="bling-count-badge" id="bling-pending-badge" style="display: none;">0</span>
         </button>
 
         <button class="btn btn-secondary" id="btn-open-mappings" title="Parametrizar campos do Moskit">
@@ -809,9 +814,167 @@
   <div id="print-batch-root" aria-hidden="true"></div>
 
   <!-- Scripts -->
+  <!-- ============================================== -->
+  <!-- MODAL: INTEGRAÇÃO BLING (Moskit -> Bling)      -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-bling">
+    <div class="modal-container" style="max-width: 1080px;">
+      <div class="modal-header">
+        <h2><span>📦</span> Pedidos de Venda no Bling</h2>
+        <button class="modal-close-btn" data-close="modal-bling">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="bling-tabs">
+          <button type="button" class="filter-pill active" data-bling-tab="fila">📋 Fila de pedidos</button>
+          <button type="button" class="filter-pill" data-bling-tab="conferencia">🔎 Conferência</button>
+          <button type="button" class="filter-pill" data-bling-tab="mapeamento">🔀 Mapeamento</button>
+          <button type="button" class="filter-pill" data-bling-tab="config">🛠️ Configuração</button>
+        </div>
+
+        <div class="bling-connection-banner" id="bling-connection-banner" style="display: none;"></div>
+
+        <!-- ABA: FILA -->
+        <section class="bling-tab-panel active" data-bling-panel="fila">
+          <div class="bling-toolbar">
+            <div class="bling-deal-input">
+              <input type="text" id="bling-input-deal" inputmode="numeric" placeholder="Nº do negócio no Moskit">
+              <button type="button" class="btn btn-primary" id="bling-btn-conferir-id">🔎 Conferir</button>
+            </div>
+            <div class="bling-filters">
+              <button type="button" class="filter-pill active" data-bling-filter="pendente">Pendentes</button>
+              <button type="button" class="filter-pill" data-bling-filter="erro">Com erro</button>
+              <button type="button" class="filter-pill" data-bling-filter="enviado">Enviados</button>
+              <button type="button" class="filter-pill" data-bling-filter="ignorado">Ignorados</button>
+              <button type="button" class="filter-pill" data-bling-filter="todos">Todos</button>
+            </div>
+          </div>
+          <p class="bling-hint">Negócios movidos para <strong>Ganhou</strong> no Moskit entram aqui automaticamente. Nada é enviado ao Bling sem a sua conferência e confirmação.</p>
+          <div class="table-responsive">
+            <table class="bling-table">
+              <thead>
+                <tr>
+                  <th>Negócio</th>
+                  <th>Descrição</th>
+                  <th style="text-align: right;">Valor</th>
+                  <th>Origem</th>
+                  <th>Status</th>
+                  <th>Pedido Bling</th>
+                  <th style="text-align: right;">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="bling-fila-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ABA: CONFERÊNCIA -->
+        <section class="bling-tab-panel" data-bling-panel="conferencia">
+          <div id="bling-preview-container">
+            <p class="bling-hint">Digite o número do negócio na aba <strong>Fila de pedidos</strong> ou clique em <strong>Conferir</strong> em um item da fila.</p>
+          </div>
+        </section>
+
+        <!-- ABA: MAPEAMENTO -->
+        <section class="bling-tab-panel" data-bling-panel="mapeamento">
+          <p class="bling-hint">
+            Defina de qual campo do Moskit (ORIGEM) vem cada campo do pedido no Bling (DESTINO).
+            Use <code>||</code> para alternativas (ex.: <code>company.cnpj || contact.cpf</code>).
+            "Valor fixo" é usado quando a origem estiver vazia.
+          </p>
+          <div class="table-responsive">
+            <table class="bling-table">
+              <thead>
+                <tr><th>DESTINO (Bling)</th><th>ORIGEM (Moskit)</th><th>Valor fixo / padrão</th></tr>
+              </thead>
+              <tbody id="bling-mapeamento-body"></tbody>
+            </table>
+          </div>
+          <datalist id="bling-moskit-fields"></datalist>
+          <div class="bling-actions-right">
+            <button type="button" class="btn btn-primary" id="bling-btn-salvar-mapeamento">💾 Salvar mapeamento</button>
+          </div>
+        </section>
+
+        <!-- ABA: CONFIGURAÇÃO -->
+        <section class="bling-tab-panel" data-bling-panel="config">
+          <div class="form-section-title">🔑 Conexão com o Bling (API v3 / OAuth)</div>
+          <div class="bling-auth-status" id="bling-auth-status"></div>
+          <div class="form-grid" id="bling-credenciais-form">
+            <div class="form-group">
+              <label for="bling-client-id">Client ID</label>
+              <input type="text" id="bling-client-id" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="bling-client-secret">Client Secret</label>
+              <input type="password" id="bling-client-secret" autocomplete="new-password" placeholder="Em branco = manter o atual">
+            </div>
+            <div class="form-group full-width">
+              <label>Link de redirecionamento (cadastre no aplicativo do Bling)</label>
+              <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="bling-callback-url" readonly class="bling-mono" style="flex: 1;">
+                <button type="button" class="btn btn-secondary" data-bling-copy="bling-callback-url">Copiar</button>
+              </div>
+            </div>
+          </div>
+          <div class="bling-actions-right">
+            <button type="button" class="btn btn-secondary" id="bling-btn-salvar-credenciais">💾 Salvar credenciais</button>
+            <a class="btn btn-primary" id="bling-btn-conectar" href="/api/bling/conectar">🔗 Conectar ao Bling</a>
+          </div>
+
+          <div class="form-section-title">🧾 Como o pedido é criado</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="bling-cfg-situacao">Situação inicial</label>
+              <select id="bling-cfg-situacao"><option value="6">Em aberto (6)</option></select>
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-prazo">Vencimento da parcela (dias após o pedido)</label>
+              <input type="number" id="bling-cfg-prazo" min="0" step="1">
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-forma">Forma de pagamento (opcional)</label>
+              <select id="bling-cfg-forma"><option value="">— não informar —</option></select>
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-vendedor">Vendedor (opcional)</label>
+              <select id="bling-cfg-vendedor"><option value="">— não informar —</option></select>
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-categoria">ID da categoria financeira (opcional)</label>
+              <input type="text" id="bling-cfg-categoria" inputmode="numeric">
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-loja">ID da loja (opcional)</label>
+              <input type="text" id="bling-cfg-loja" inputmode="numeric">
+            </div>
+            <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 0.75rem;">
+              <input type="checkbox" id="bling-cfg-auto" style="width: 20px; height: 20px;">
+              <label for="bling-cfg-auto" style="text-transform: none; font-size: 0.92rem; cursor: pointer;">
+                Colocar automaticamente na fila os negócios que chegarem como <strong>Ganhou</strong> pelo webhook
+              </label>
+            </div>
+          </div>
+          <div class="bling-actions-right">
+            <button type="button" class="btn btn-secondary" id="bling-btn-carregar-opcoes">🔄 Carregar listas do Bling</button>
+            <button type="button" class="btn btn-primary" id="bling-btn-salvar-config">💾 Salvar configuração</button>
+          </div>
+
+          <div class="form-section-title">🛡️ Segurança do Webhook do Moskit</div>
+          <div class="bling-webhook-box" id="bling-webhook-box"></div>
+        </section>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-bling">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/moskit.js"></script>
   <script src="js/skuManager.js"></script>
   <script src="js/print.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/bling.js"></script>
 </body>
 </html>

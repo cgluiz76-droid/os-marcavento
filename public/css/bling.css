@@ -1,0 +1,194 @@
+/* bling.css - Estilos da integração Moskit -> Bling (escopo .bling-*) */
+
+.bling-count-badge {
+  display: inline-block;
+  min-width: 1.35rem;
+  padding: 0 0.4rem;
+  margin-left: 0.25rem;
+  border-radius: 999px;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35rem;
+  text-align: center;
+}
+
+a.btn { text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.bling-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem; }
+.bling-tab-panel { display: none; }
+.bling-tab-panel.active { display: block; }
+
+.bling-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.bling-deal-input { display: flex; gap: 0.5rem; }
+.bling-deal-input input {
+  width: 220px;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+.bling-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.bling-filters .filter-pill { font-size: 0.8rem; }
+
+.bling-hint { color: var(--text-secondary); font-size: 0.86rem; margin: 0 0 1rem; }
+.bling-hint code, .bling-mono { font-family: ui-monospace, Consolas, monospace; }
+
+.bling-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.bling-table th {
+  text-align: left;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.bling-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+.bling-table td.num, .bling-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bling-table td small { color: var(--text-muted); display: block; margin-top: 0.15rem; }
+.bling-table tr.bling-group-row td {
+  background: var(--bg-secondary);
+  color: var(--accent-gold);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bling-table input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+}
+.bling-origem { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; color: var(--text-secondary); word-break: break-word; }
+.bling-row-actions { display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap; }
+.bling-empty { text-align: center; color: var(--text-muted); padding: 2rem 0.75rem !important; }
+
+.bling-pill {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.bling-pill.pendente { background: rgba(245, 158, 11, 0.15); color: var(--accent-gold); border-color: rgba(245, 158, 11, 0.35); }
+.bling-pill.enviando { background: rgba(14, 165, 233, 0.15); color: var(--accent-blue); border-color: rgba(14, 165, 233, 0.35); }
+.bling-pill.enviado, .bling-pill.ok { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border-color: rgba(16, 185, 129, 0.35); }
+.bling-pill.erro { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border-color: rgba(239, 68, 68, 0.35); }
+.bling-pill.aviso { background: rgba(245, 158, 11, 0.15); color: var(--accent-gold); border-color: rgba(245, 158, 11, 0.35); }
+.bling-pill.ignorado { background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border-color: var(--border-color); }
+
+.bling-box {
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.bling-box ul { margin: 0.35rem 0 0 1.1rem; padding: 0; }
+.bling-box li { margin: 0.2rem 0; }
+.bling-box.erro { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4); color: var(--text-primary); }
+.bling-box.aviso { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.4); color: var(--text-primary); }
+.bling-box.ok { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--text-primary); }
+.bling-box.info { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-secondary); }
+.bling-box strong.title { display: block; margin-bottom: 0.15rem; }
+
+.bling-deal-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+.bling-deal-header h3 { margin: 0 0 0.2rem; font-size: 1.05rem; color: var(--text-primary); }
+.bling-deal-header small { color: var(--text-secondary); }
+.bling-deal-total { text-align: right; }
+.bling-deal-total strong { display: block; font-size: 1.35rem; color: var(--accent-gold); font-variant-numeric: tabular-nums; }
+
+.bling-section-title { margin: 1.25rem 0 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.bling-confirm-bar {
+  position: sticky;
+  bottom: -1px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+}
+.bling-confirm-bar label { display: flex; align-items: center; gap: 0.55rem; font-size: 0.88rem; cursor: pointer; color: var(--text-primary); }
+.bling-confirm-bar input[type="checkbox"] { width: 18px; height: 18px; }
+.bling-confirm-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.bling-confirm-bar .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.bling-actions-right { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 0.5rem; }
+.bling-connection-banner { margin-bottom: 1rem; }
+.bling-auth-status { margin-bottom: 0.75rem; }
+.bling-webhook-box .bling-url-row { display: flex; gap: 0.5rem; margin: 0.5rem 0; }
+.bling-webhook-box input {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+details.bling-json { margin-top: 1rem; }
+details.bling-json summary { cursor: pointer; color: var(--text-secondary); font-size: 0.84rem; }
+details.bling-json pre {
+  max-height: 320px;
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.bling-loading { color: var(--text-secondary); padding: 1.5rem 0; text-align: center; }
+
+@media (max-width: 720px) {
+  .bling-deal-input { width: 100%; }
+  .bling-deal-input input { flex: 1; width: auto; }
+  .bling-deal-total { text-align: left; }
+  .bling-confirm-bar { position: static; }
+  .bling-confirm-buttons { width: 100%; }
+  .bling-confirm-buttons .btn { flex: 1 1 100%; justify-content: center; }
+}

@@ -8,6 +8,9 @@ const db = require('./db');
 const moskitService = require('./moskitService');
 const pdfService = require('./pdfService');
 const skuDictionary = require('./skuDictionary');
+const crypto = require('crypto');
+const blingDb = require('./blingDb');
+const blingRoutes = require('./blingRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -219,6 +222,20 @@ app.post('/api/moskit/import-deal/:dealId', async (req, res) => {
 
 // Webhook listener for Moskit CRM
 app.post('/api/webhook/moskit', async (req, res) => {
+  // Proteção opcional: só é exigida depois que um token for gerado na tela do Bling.
+  // Sem token configurado, o webhook funciona exatamente como antes.
+  let expectedToken = '';
+  try { expectedToken = blingDb.getConfig('moskit_webhook_token', ''); } catch (e) { expectedToken = ''; }
+  if (expectedToken) {
+    const received = String(req.query.token || req.get('x-webhook-token') || '');
+    const a = Buffer.from(received);
+    const b = Buffer.from(expectedToken);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      console.warn('[Webhook] Chamada recusada: token ausente ou inválido.');
+      return res.status(401).json({ received: false, error: 'Token do webhook inválido.' });
+    }
+  }
+
   console.log('[Webhook Moskit Recebido]:', JSON.stringify(req.body).substring(0, 300));
   try {
     const payload = req.body;
@@ -253,6 +270,16 @@ app.post('/api/webhook/moskit', async (req, res) => {
         } catch (e) {
           console.warn('[Webhook] Aviso ao buscar dados completos:', e.message);
         }
+      }
+
+      // Integração Bling: apenas coloca o negócio na fila de conferência (nada é enviado
+      // ao Bling sem confirmação na tela). Isolado para nunca afetar a criação da O.S.
+      try {
+        if (blingDb.getConfig('auto_enfileirar', 'true') !== 'false') {
+          blingDb.enqueue(fullDeal.id || dealData.id, fullDeal.name || dealData.name, fullDeal.price || dealData.price, 'webhook');
+        }
+      } catch (blingErr) {
+        console.warn('[Webhook] Aviso ao enfileirar para o Bling:', blingErr.message);
       }
 
       const result = await moskitService.importDeal(fullDeal);
@@ -505,6 +532,11 @@ app.get('/api/orders/:id/pdf', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ==========================================
+// INTEGRAÇÃO BLING (rotas /api/bling/*)
+// ==========================================
+app.use(blingRoutes);
 
 // ==========================================
 // TEST ENDPOINT: SIMULATE DEAL IMPORT
