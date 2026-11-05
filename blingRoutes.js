@@ -115,6 +115,13 @@ router.get('/api/bling/opcoes', async (req, res) => {
   res.json({ success: true, ...out });
 });
 
+// Diagnóstico de permissões (somente leitura no Bling)
+router.get('/api/bling/diagnostico', async (req, res) => {
+  try {
+    res.json({ success: true, permissoes: await blingService.diagnosticarPermissoes() });
+  } catch (err) { sendError(res, err); }
+});
+
 // ---------- Segurança do webhook do Moskit ----------
 
 router.post('/api/bling/webhook-token', (req, res) => {
