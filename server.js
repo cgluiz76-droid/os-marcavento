@@ -200,6 +200,11 @@ app.post('/api/moskit/test-connection', async (req, res) => {
 
 // Sincronizar negócios "Ganhou"
 app.post('/api/moskit/sync', async (req, res) => {
+  // A sincronização cria O.S. em lote e SOBRESCREVE O.S. existentes com os dados do Moskit.
+  // Só executa com confirmação explícita vinda da tela.
+  if (!req.body || req.body.confirmado !== true) {
+    return res.status(400).json({ success: false, error: 'Sincronização não confirmada. Use o botão "Sincronizar Moskit" e confirme o aviso.' });
+  }
   try {
     const results = await moskitService.syncWonDeals();
     res.json({ success: true, results });

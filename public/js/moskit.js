@@ -195,7 +195,29 @@ const MoskitManager = {
     }
   },
 
-  async syncWonDeals() {
+  // Abre o aviso de confirmação (a sincronização só roda em confirmSyncWonDeals)
+  syncWonDeals() {
+    const modal = document.getElementById('modal-confirm-sync');
+    const chk = document.getElementById('chk-confirm-sync');
+    const input = document.getElementById('input-confirm-sync');
+    const btnOk = document.getElementById('btn-confirm-sync');
+    if (!modal || !chk || !input || !btnOk) return;
+    chk.checked = false;
+    input.value = '';
+    btnOk.disabled = true;
+    const update = () => { btnOk.disabled = !(chk.checked && input.value.trim().toUpperCase() === 'SINCRONIZAR'); };
+    chk.onchange = update;
+    input.oninput = update;
+    btnOk.onclick = () => {
+      if (btnOk.disabled) return;
+      modal.classList.remove('active');
+      this.confirmSyncWonDeals();
+    };
+    modal.classList.add('active');
+    setTimeout(() => input.focus(), 50);
+  },
+
+  async confirmSyncWonDeals() {
     const btn = document.getElementById('btn-sync-moskit');
     if (btn) {
       btn.disabled = true;
@@ -203,7 +225,7 @@ const MoskitManager = {
     }
 
     try {
-      const res = await fetch('/api/moskit/sync', { method: 'POST' });
+      const res = await fetch('/api/moskit/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmado: true }) });
       const data = await res.json();
       if (data.success) {
         const { created, updated, total } = data.results;
