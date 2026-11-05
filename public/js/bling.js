@@ -508,6 +508,12 @@ const BlingManager = {
     html += `<tr><td colspan="4" class="num"><strong>Total</strong></td><td class="num"><strong>${this.money(p.total)}</strong></td><td></td></tr>`;
     html += `</tbody></table></div>`;
 
+    if (Array.isArray(p.camposMoskit) && p.camposMoskit.length) {
+      html += `<details class="bling-json"><summary>Ver campos disponíveis neste negócio do Moskit (para usar no Mapeamento)</summary>
+        <div class="table-responsive"><table class="bling-table"><thead><tr><th>Caminho (ORIGEM)</th><th>Valor</th></tr></thead><tbody>
+        ${p.camposMoskit.map(c => `<tr><td class="bling-origem">${this.esc(c.caminho)}</td><td>${this.esc(c.valor)}</td></tr>`).join('')}
+        </tbody></table></div></details>`;
+    }
     html += `<details class="bling-json"><summary>Ver dados técnicos que serão enviados ao Bling (JSON)</summary>
       <pre>${this.esc(JSON.stringify({ contatoNovo: p.contatoPayload, pedido: p.payload }, null, 2))}</pre></details>`;
 
