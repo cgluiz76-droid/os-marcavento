@@ -35,7 +35,7 @@
           <span id="theme-toggle-icon">☀️</span>
         </button>
 
-        <button class="btn btn-outline-gold" id="btn-sync-moskit" title="Sincronizar negócios 'Ganhou' do Moskit">
+        <button class="btn btn-outline-gold" id="btn-sync-moskit" title="ATENÇÃO: cria O.S. em lote e sobrescreve O.S. existentes (pede confirmação)">
           <span class="btn-icon-symbol">🔄</span> Sincronizar Moskit
         </button>
 
@@ -814,6 +814,43 @@
   <div id="print-batch-root" aria-hidden="true"></div>
 
   <!-- Scripts -->
+  <!-- ============================================== -->
+  <!-- MODAL: CONFIRMAÇÃO DA SINCRONIZAÇÃO DO MOSKIT  -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-confirm-sync">
+    <div class="modal-container" style="max-width: 620px;">
+      <div class="modal-header">
+        <h2><span>⚠️</span> Atenção: Sincronizar Moskit</h2>
+        <button class="modal-close-btn" data-close="modal-confirm-sync">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: rgba(239, 68, 68, 0.12); border: 2px solid var(--accent-red); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem; line-height: 1.5;">
+          <strong style="display: block; color: var(--accent-red); font-size: 1.05rem; margin-bottom: 0.4rem;">Esta ação altera as Ordens de Serviço em lote e não pode ser desfeita pela tela.</strong>
+          Ao confirmar, o sistema lê até <strong>50 negócios "Ganhou"</strong> do Moskit e:
+          <ul style="margin: 0.5rem 0 0 1.2rem; padding: 0;">
+            <li><strong>Cria uma O.S. nova</strong> para cada negócio que ainda não tem O.S., inclusive negócios antigos, consumindo números de orçamento em sequência;</li>
+            <li><strong>Sobrescreve as O.S. que já existem</strong> com os dados do Moskit: a data da O.S. passa a ser a de hoje, e cliente, pagamento e <strong>itens são substituídos</strong>. <strong>Edições feitas à mão são perdidas.</strong></li>
+          </ul>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 1rem;">
+          Para trazer um negócio específico, prefira <strong>🔍 Importar por ID</strong>. Os negócios movidos para "Ganhou" já chegam automaticamente pelo webhook.
+        </p>
+        <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.92rem; margin-bottom: 0.9rem;">
+          <input type="checkbox" id="chk-confirm-sync" style="width: 18px; height: 18px; margin-top: 2px;">
+          Entendo que O.S. novas serão criadas e que O.S. existentes serão sobrescritas.
+        </label>
+        <div class="form-group">
+          <label for="input-confirm-sync">Para confirmar, digite SINCRONIZAR</label>
+          <input type="text" id="input-confirm-sync" autocomplete="off" placeholder="SINCRONIZAR">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-confirm-sync">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-sync" disabled>Sincronizar mesmo assim</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================================== -->
   <!-- MODAL: INTEGRAÇÃO BLING (Moskit -> Bling)      -->
   <!-- ============================================== -->
