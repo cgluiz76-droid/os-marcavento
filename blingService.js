@@ -782,18 +782,20 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
 
     let res;
     try {
-      res = await blingFetch('POST', '/pedidos/vendas', { body: payload });
+      // A situação é aplicada depois (PATCH), só se for diferente da situação padrão do Bling
+      const { situacao: _sit, ...corpoPost } = payload;
+      res = await blingFetch('POST', '/pedidos/vendas', { body: corpoPost });
     } catch (postErr) {
-      // Em falha de rede não sabemos se o Bling criou o pedido: confere antes de devolver erro
-      if (postErr.network) {
-        const check = await findOrdersByNumeroLoja(payload.numeroLoja).catch(() => []);
-        if (check.length) {
-          blingDb.markSent(id, { pedidoId: check[0].id, pedidoNumero: check[0].numero, contatoId, request: payload, response: { recuperado: check[0] } });
-          syncOsNumber(id, origem);
-          blingDb.log(id, 'enviado', `Pedido nº ${check[0].numero} confirmado após falha de rede.`);
-          blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'sucesso', mensagem: `Pedido nº ${check[0].numero} criado (confirmado após falha de conexão).`, pedidoId: check[0].id, pedidoNumero: check[0].numero, payload });
-          return { ok: true, pedido: { id: check[0].id, numero: check[0].numero } };
-        }
+      // Em qualquer erro (rede ou validação), confere se o Bling criou o pedido mesmo assim
+      const check = await findOrdersByNumeroLoja(payload.numeroLoja).catch(() => []);
+      if (check.length) {
+        blingDb.markSent(id, { pedidoId: check[0].id, pedidoNumero: check[0].numero, contatoId, request: payload, response: { recuperado: check[0], aviso: postErr.message } });
+        syncOsNumber(id, origem);
+        blingDb.log(id, 'enviado', `Pedido nº ${check[0].numero} confirmado após resposta de erro do Bling.`);
+        blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'sucesso',
+          mensagem: `Pedido nº ${check[0].numero} criado (o Bling respondeu "${postErr.message.slice(0, 120)}", mas o pedido foi gravado).`,
+          pedidoId: check[0].id, pedidoNumero: check[0].numero, payload, response: postErr.response || null });
+        return { ok: true, pedido: { id: check[0].id, numero: check[0].numero } };
       }
       throw postErr;
     }
@@ -978,12 +980,14 @@ function getPendingChange(dealId) {
 }
 
 // Autorização do usuário: atualiza o pedido existente no Bling
-async function applyPendingChange(dealId) {
+async function applyPendingChange(dealId, { forcar = false } = {}) {
   const id = Number(dealId);
   return serialize(id, async () => {
     // Recalcula com os dados mais recentes do Moskit antes de gravar
-    const det = await detectChange(id, 'manual');
-    if (det.ok && !det.mudou) return { ok: false, codigo: 'sem_alteracao', mensagem: 'Não há mais diferença entre o Moskit e o pedido no Bling. Nada a atualizar.' };
+    if (!forcar) {
+      const det = await detectChange(id, 'manual');
+      if (det.ok && !det.mudou) return { ok: false, codigo: 'sem_alteracao', mensagem: 'Não há mais diferença entre o Moskit e o pedido no Bling. Nada a atualizar.' };
+    }
     const info = getPendingChange(id);
     if (!info || info.pedido.status !== 'alteracao_pendente') return { ok: false, codigo: 'sem_pendencia', mensagem: 'Não há alteração pendente para este negócio.' };
     if (info.erros.length) return { ok: false, codigo: 'erros', mensagem: `Corrija antes de atualizar: ${info.erros.join(' | ')}` };
@@ -1019,7 +1023,8 @@ async function applyPendingChange(dealId) {
       const orig = (atual.data && atual.data.observacoesInternas) || '';
       payload.observacoesInternas = `${orig ? orig + '\n' : ''}Atualizado via Automação Moskit-Bling em ${new Date().toISOString()}`;
 
-      const res = await blingFetch('PUT', `/pedidos/vendas/${row.bling_pedido_id}`, { body: payload });
+      const { situacao: _sitPut, ...corpoPut } = payload;
+      const res = await blingFetch('PUT', `/pedidos/vendas/${row.bling_pedido_id}`, { body: corpoPut });
       blingDb.markUpdated(id, { contatoId: payload.contato.id, request: payload, response: res });
       blingDb.addHistory({ dealId: id, origem: 'manual', evento: 'atualizacao', resultado: 'sucesso',
         mensagem: `Pedido nº ${row.bling_pedido_numero} atualizado no Bling com os dados do Moskit (${diff.map(d => d.campo).join(', ')}).`,
@@ -1032,6 +1037,44 @@ async function applyPendingChange(dealId) {
       return { ok: false, codigo: 'falha', mensagem: err.message };
     }
   });
+}
+
+// Prepara a substituição do pedido existente pelos dados conferidos agora (sem gravar nada)
+async function prepareReplace(dealId) {
+  const id = Number(dealId);
+  return serialize(id, async () => {
+    const row = blingDb.getOrderByDeal(id);
+    if (!row || !['enviado', 'alteracao_pendente'].includes(row.status) || !row.bling_pedido_id) {
+      return { ok: false, codigo: 'sem_pedido', mensagem: 'Este negócio ainda não tem pedido criado no Bling pela integração.' };
+    }
+    const preview = await buildPreview(id);
+    const erros = preview.erros.filter(e => !e.startsWith(JA_ENVIADO_PREFIX));
+    let enviado = null;
+    try { enviado = row.request_json ? JSON.parse(row.request_json) : null; } catch (e) { enviado = null; }
+    const depois = snapshotFromPayload(preview.payload, contatoRefFromPreview(preview));
+    let diff = enviado ? diffSnapshots(snapshotFromPayload(enviado, row.bling_contato_id ? `id ${row.bling_contato_id}` : ''), depois) : null;
+    if (!diff) diff = [{ campo: 'Pedido', antes: '(dados enviados não registrados no sistema)', depois: 'Dados atuais do Moskit' }];
+    return {
+      ok: true, erros, diff,
+      pedido: { id: row.bling_pedido_id, numero: row.bling_pedido_numero },
+      _interno: { payload: preview.payload, contato: preview.contato, contatoPayload: preview.contatoPayload, signature: JSON.stringify(depois) }
+    };
+  });
+}
+
+// Substitui (sobrescreve) o pedido existente no Bling pelos dados atuais do Moskit, por decisão do usuário
+async function replaceOrder(dealId) {
+  const id = Number(dealId);
+  const prep = await prepareReplace(id);
+  if (!prep.ok) return prep;
+  if (prep.erros.length) return { ok: false, codigo: 'erros', mensagem: `Corrija antes de substituir: ${prep.erros.join(' | ')}` };
+  const semDiferenca = !prep.diff.length;
+  blingDb.setPendingChange(id, { ...prep._interno, erros: [] },
+    semDiferenca ? [{ campo: '(campos comparados iguais)', antes: '', depois: 'Substituição solicitada na conferência' }] : prep.diff);
+  blingDb.addHistory({ dealId: id, origem: 'manual', evento: 'alteracao', resultado: 'info',
+    mensagem: `Substituição do pedido nº ${prep.pedido.numero} solicitada na conferência${semDiferenca ? ' (sem diferenças nos campos comparados)' : ` (${prep.diff.map(d => d.campo).join(', ')})`}.`,
+    pedidoId: prep.pedido.id, pedidoNumero: prep.pedido.numero, diff: prep.diff });
+  return applyPendingChange(id, { forcar: true });
 }
 
 function discardPendingChange(dealId) {
@@ -1167,6 +1210,8 @@ async function diagnosticarPermissoes() {
 }
 
 module.exports = {
+  prepareReplace: async (id) => { const r = await prepareReplace(id); if (r && r._interno) delete r._interno; return r; },
+  replaceOrder,
   syncOsNumber,
   formatOsNumber,
   isRecentWin,

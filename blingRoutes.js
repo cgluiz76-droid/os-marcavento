@@ -168,6 +168,21 @@ router.post('/api/bling/alteracao/:dealId/descartar', (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
+// Conferência de negócio que já gerou pedido: diferenças em relação ao pedido no Bling
+router.get('/api/bling/substituir/:dealId', async (req, res) => {
+  try { res.json({ success: true, ...(await blingService.prepareReplace(req.params.dealId)) }); }
+  catch (err) { sendError(res, err); }
+});
+
+// Confirmação do usuário: substitui os dados do pedido no Bling pelos dados conferidos agora
+router.post('/api/bling/substituir/:dealId', async (req, res) => {
+  try {
+    if (!req.body || req.body.confirmado !== true) return sendError(res, new Error('Confirme a substituição na tela de conferência.'), 400);
+    const r = await blingService.replaceOrder(req.params.dealId);
+    res.status(r.ok ? 200 : 409).json({ success: r.ok, ...r });
+  } catch (err) { sendError(res, err); }
+});
+
 // Verifica manualmente se o negócio mudou no Moskit depois do envio
 router.post('/api/bling/alteracao/:dealId/verificar', async (req, res) => {
   try {
