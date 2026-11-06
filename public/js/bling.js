@@ -616,7 +616,7 @@ const BlingManager = {
     const c = document.getElementById('bling-preview-container');
     const nivelPill = (n) => `<span class="bling-pill ${n}">${n === 'ok' ? 'OK' : n === 'aviso' ? 'Atenção' : 'Erro'}</span>`;
     const fila = p.fila;
-    const jaEnviado = fila && ['enviado', 'alteracao_pendente'].includes(fila.status);
+    const jaEnviado = Boolean((fila && ['enviado', 'alteracao_pendente'].includes(fila.status)) || p.pedidoExistente);
 
     let html = `
       <div class="bling-deal-header">
@@ -632,7 +632,7 @@ const BlingManager = {
     if (resultado) html += resultado;
 
     if (jaEnviado) {
-      html += `<div class="bling-box ok"><strong class="title">Pedido já criado no Bling</strong>Pedido Bling nº ${this.esc(fila.bling_pedido_numero || fila.bling_pedido_id)}. Um novo pedido não será criado. No final desta tela você pode <strong>substituir os dados desse pedido</strong> pelos dados conferidos agora.</div>`;
+      html += `<div class="bling-box ok"><strong class="title">Pedido já criado no Bling</strong>Pedido Bling nº ${this.esc((fila && (fila.bling_pedido_numero || fila.bling_pedido_id)) || (p.pedidoExistente && p.pedidoExistente.numero) || '')}. Um novo pedido não será criado. No final desta tela você pode <strong>substituir os dados desse pedido</strong> pelos dados conferidos agora.</div>`;
     }
     if (p.erros.length && !jaEnviado) {
       html += `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de enviar</strong><ul>${p.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>`;
@@ -727,7 +727,7 @@ const BlingManager = {
         <div class="bling-section-title">Substituir o pedido nº ${this.esc(num)} no Bling</div>
         ${semDif
           ? '<div class="bling-box info">Os campos principais (cliente, datas, itens, total e observações) estão iguais aos do pedido no Bling. Você ainda pode substituir, por exemplo, para reenviar dados de cadastro ou configuração.</div>'
-          : `<div class="bling-box aviso"><strong class="title">📝 Diferenças entre o pedido no Bling e os dados conferidos agora</strong></div>${this.diffTable(r.diff)}`}
+          : `<div class="bling-box aviso"><strong class="title">📝 Diferenças entre o pedido como está hoje no Bling e os dados conferidos agora</strong></div>${this.diffTable(r.diff).replace('No Bling (enviado)', 'No Bling hoje')}`}
         ${r.erros.length ? `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de substituir</strong><ul>${r.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>` : ''}
         <div class="bling-confirm-bar">
           <label><input type="checkbox" id="bling-chk-substituir" ${r.erros.length ? 'disabled' : ''}> Confirmo que quero substituir os dados do pedido nº ${this.esc(num)} no Bling pelos dados conferidos agora</label>
@@ -736,7 +736,8 @@ const BlingManager = {
             <button type="button" class="btn btn-danger" id="bling-btn-substituir" disabled>♻️ Substituir no Bling</button>
           </div>
         </div>
-        <p class="bling-hint" style="margin-top: 0.5rem;">A substituição só é feita enquanto o pedido estiver na situação inicial (Em aberto) no Bling. Os dados anteriores ficam guardados no Histórico.</p>`;
+        ${r.pedido.situacaoInicial ? '' : '<div class="bling-box erro" style="margin-top: 0.5rem;">O pedido não está mais na situação inicial (Em aberto) no Bling. A substituição será recusada; ajuste-o diretamente no Bling.</div>'}
+        <p class="bling-hint" style="margin-top: 0.5rem;">O número do pedido no Bling e o número da O.S. continuam os mesmos. A substituição só é feita enquanto o pedido estiver na situação inicial (Em aberto) no Bling. Os dados anteriores ficam guardados no Histórico.</p>`;
       const chk = document.getElementById('bling-chk-substituir');
       const btn = document.getElementById('bling-btn-substituir');
       chk?.addEventListener('change', () => { btn.disabled = !chk.checked; });
