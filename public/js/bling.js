@@ -224,9 +224,29 @@ const BlingManager = {
         <div class="bling-url-row"><input type="text" readonly value="${this.esc(wh.url)}" id="bling-webhook-url"></div>
         <div class="bling-actions-right"><button type="button" class="btn btn-primary btn-sm" id="bling-btn-wh-gerar">🛡️ Ativar proteção (gerar token)</button></div>`;
     }
+    box.insertAdjacentHTML('beforeend', `
+      <div class="form-section-title" style="margin-top: 1rem;">🔑 Token do Moskit</div>
+      <div class="bling-box ${wh.tokenMoskitConfigurado ? 'ok' : 'info'}">
+        ${wh.tokenMoskitConfigurado
+          ? '<strong class="title">✅ Token do Moskit configurado</strong>Avisos que trazem o token do Moskit são aceitos mesmo sem o token na URL.'
+          : 'O Moskit envia um token próprio em cada aviso. Copie-o em <em>Moskit → Marketplace → Webhooks</em> (botão "Copiar token") e cole abaixo. Assim a URL do Moskit pode ficar sem <code>?token=</code>. Se o token for renovado no Moskit, cole o novo aqui.'}
+      </div>
+      <div class="bling-url-row">
+        <input type="password" id="bling-moskit-token" autocomplete="off" placeholder="${wh.tokenMoskitConfigurado ? '•••••••• (salvo; cole outro para trocar)' : 'Cole aqui o token do Moskit'}">
+        <button type="button" class="btn btn-primary" id="bling-btn-moskit-token">Salvar token</button>
+      </div>`);
     document.getElementById('bling-btn-copy-wh')?.addEventListener('click', () => this.copy(wh.url));
     document.getElementById('bling-btn-wh-gerar')?.addEventListener('click', () => this.webhookToken('gerar'));
     document.getElementById('bling-btn-wh-remover')?.addEventListener('click', () => this.webhookToken('remover'));
+    document.getElementById('bling-btn-moskit-token')?.addEventListener('click', async () => {
+      const token = document.getElementById('bling-moskit-token').value.trim();
+      if (!token) return this.toast('Cole o token copiado da tela de Webhooks do Moskit.', 'error');
+      try {
+        await this.api('/api/bling/moskit-token', { method: 'POST', body: JSON.stringify({ token }) });
+        this.toast('Token do Moskit salvo. Os próximos avisos do Moskit serão aceitos.', 'success');
+        this.loadStatus();
+      } catch (e) { this.toast(e.message, 'error'); }
+    });
   },
 
   async webhookToken(acao) {

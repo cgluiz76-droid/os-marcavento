@@ -40,7 +40,7 @@ app.use('/api/webhook/moskit', (req, res, next) => {
   res.on('finish', () => {
     let resumo = '';
     try { resumo = res.locals.webhookResumo || ''; } catch (e) { resumo = ''; }
-    registrarChegadaWebhook(req, { caminho: req.originalUrl.split('?')[0], fase: 'respondeu', resposta: res.statusCode, ms: Date.now() - inicio, resultado: String(resumo).slice(0, 200) });
+    registrarChegadaWebhook(req, { caminho: req.originalUrl.split('?')[0], fase: 'respondeu', resposta: res.statusCode, ms: Date.now() - inicio, resultado: String(resumo).slice(0, 200), ...(res.locals.webhookDiag ? { diagnostico: res.locals.webhookDiag } : {}) });
   });
   next();
 });
@@ -298,14 +298,42 @@ app.post('/api/webhook/moskit', async (req, res, next) => {
 async function webhookMoskitHandler(req, res) {
   // Proteção opcional: só é exigida depois que um token for gerado na tela do Bling.
   // Sem token configurado, o webhook funciona exatamente como antes.
+  // Avisos enviados pelo Bling não são usados neste endereço: confirma o recebimento e ignora
+  if (/bling/i.test(String(req.get('user-agent') || ''))) {
+    return res.status(200).json({ received: true, ignored: 'Aviso do Bling não é usado neste endereço' });
+  }
+
   let expectedToken = '';
-  try { expectedToken = blingDb.getConfig('moskit_webhook_token', ''); } catch (e) { expectedToken = ''; }
-  if (expectedToken) {
-    const received = String(req.query.token || req.get('x-webhook-token') || '');
-    const a = Buffer.from(received);
-    const b = Buffer.from(expectedToken);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  let moskitToken = '';
+  try {
+    expectedToken = blingDb.getConfig('moskit_webhook_token', '');
+    moskitToken = blingDb.getConfig('moskit_token_origem', '');
+  } catch (e) { expectedToken = ''; moskitToken = ''; }
+  if (expectedToken || moskitToken) {
+    const igual = (x, y) => {
+      if (!x || !y) return false;
+      const a = Buffer.from(String(x)); const b = Buffer.from(String(y));
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    };
+    // 1) token do sistema na URL (?token=) ou no cabeçalho x-webhook-token
+    let valido = igual(req.query.token, expectedToken) || igual(req.get('x-webhook-token'), expectedToken);
+    // 2) token que o próprio Moskit envia em cada aviso (cabeçalho ou campo do corpo)
+    if (!valido && moskitToken) {
+      const candidatos = [];
+      for (const v of Object.values(req.headers || {})) {
+        for (const parte of String(v).split(/[\s,;]+/)) candidatos.push(parte.replace(/^(Bearer|Token)$/i, ''));
+      }
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      for (const v of Object.values(body)) if (typeof v === 'string') candidatos.push(v);
+      valido = candidatos.some(c => igual(c, moskitToken));
+    }
+    if (!valido) {
       console.warn('[Webhook] Chamada recusada: token ausente ou inválido.');
+      res.locals.webhookDiag = {
+        tokenNaUrl: Boolean(req.query.token),
+        cabecalhos: Object.keys(req.headers || {}).filter(h => !/^(host|connection|content-length|accept-encoding|fly-|x-forwarded|via|x-request-start|cdn-loop)/i.test(h)).slice(0, 20),
+        camposCorpo: Object.keys(req.body && typeof req.body === 'object' ? req.body : {}).slice(0, 20)
+      };
       return res.status(401).json({ received: false, error: 'Token do webhook inválido.' });
     }
   }

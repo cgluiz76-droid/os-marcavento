@@ -142,7 +142,7 @@ function setConfig(key, value) {
 }
 
 // Chaves que nunca saem do servidor
-const SECRET_KEYS = new Set(['client_secret', 'access_token', 'refresh_token', 'oauth_state', 'moskit_webhook_token']);
+const SECRET_KEYS = new Set(['client_secret', 'access_token', 'refresh_token', 'oauth_state', 'moskit_webhook_token', 'moskit_token_origem']);
 
 function getPublicConfig() {
   const rows = db.prepare('SELECT key, value FROM bling_config').all();
