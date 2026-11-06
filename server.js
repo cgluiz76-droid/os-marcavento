@@ -220,6 +220,8 @@ app.post('/api/moskit/import-deal/:dealId', async (req, res) => {
     const dealId = req.params.dealId;
     const fullDeal = await moskitService.fetchFullDeal(dealId);
     const result = await moskitService.importDeal(fullDeal);
+    // Se o pedido já existe no Bling, a O.S. recebe o mesmo número
+    try { blingService.syncOsNumber(fullDeal.id || dealId, 'manual'); } catch (e) { /* isolado */ }
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -333,6 +335,8 @@ app.post('/api/webhook/moskit', async (req, res) => {
       }
 
       const result = await moskitService.importDeal(fullDeal);
+      // Se o pedido já existe no Bling, a O.S. recebe o mesmo número
+      try { blingService.syncOsNumber(fullDeal.id || dealData.id, 'webhook'); } catch (e) { /* isolado */ }
       registrarWebhook(`O.S. ${result.order.orcamento_numero} criada`);
       return res.status(200).json({ success: true, action: result.action, orderId: result.order.id });
     } else {

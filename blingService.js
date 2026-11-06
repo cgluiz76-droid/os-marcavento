@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const moskitService = require('./moskitService');
 const blingDb = require('./blingDb');
+const osDb = require('./db');
 
 const BLING_API = process.env.BLING_API_URL || 'https://api.bling.com.br/Api/v3';
 const BLING_AUTHORIZE_URL = process.env.BLING_AUTHORIZE_URL || 'https://www.bling.com.br/Api/v3/oauth/authorize';
@@ -731,6 +732,7 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
   if (preview.pedidoExistente && blingDb.tryLockForSending(id)) {
     const pe = preview.pedidoExistente;
     blingDb.markSent(id, { pedidoId: pe.id, pedidoNumero: pe.numero, contatoId: preview.contato.id, request: null, response: { recuperado: pe } });
+    syncOsNumber(id, origem);
     blingDb.log(id, 'recuperado', `Pedido já existia no Bling (nº ${pe.numero}); registro marcado como enviado.`);
     blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'info', mensagem: `Pedido já existia no Bling (nº ${pe.numero}); nada foi criado.`, pedidoId: pe.id, pedidoNumero: pe.numero });
     return { ok: false, codigo: 'ja_enviado', mensagem: `Este negócio já tem pedido no Bling (nº ${pe.numero}). Nada foi criado.`, preview };
@@ -757,6 +759,7 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
     const dup = await findOrdersByNumeroLoja(payload.numeroLoja);
     if (dup.length) {
       blingDb.markSent(id, { pedidoId: dup[0].id, pedidoNumero: dup[0].numero, contatoId, request: null, response: { recuperado: dup[0] } });
+      syncOsNumber(id, origem);
       blingDb.log(id, 'recuperado', `Pedido já existia no Bling (nº ${dup[0].numero}); registro marcado como enviado.`);
       blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'info', mensagem: `Pedido já existia no Bling (nº ${dup[0].numero}); nada foi criado.`, pedidoId: dup[0].id, pedidoNumero: dup[0].numero });
       return { ok: true, recuperado: true, pedido: { id: dup[0].id, numero: dup[0].numero } };
@@ -786,6 +789,7 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
         const check = await findOrdersByNumeroLoja(payload.numeroLoja).catch(() => []);
         if (check.length) {
           blingDb.markSent(id, { pedidoId: check[0].id, pedidoNumero: check[0].numero, contatoId, request: payload, response: { recuperado: check[0] } });
+          syncOsNumber(id, origem);
           blingDb.log(id, 'enviado', `Pedido nº ${check[0].numero} confirmado após falha de rede.`);
           blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'sucesso', mensagem: `Pedido nº ${check[0].numero} criado (confirmado após falha de conexão).`, pedidoId: check[0].id, pedidoNumero: check[0].numero, payload });
           return { ok: true, pedido: { id: check[0].id, numero: check[0].numero } };
@@ -812,6 +816,8 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
     }
 
     blingDb.markSent(id, { pedidoId, pedidoNumero: numero, contatoId, request: payload, response: res });
+
+    syncOsNumber(id, origem);
     blingDb.log(id, 'enviado', `Pedido Bling nº ${numero || '?'} (id ${pedidoId}) criado.`);
     blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'sucesso',
       mensagem: `Pedido Bling nº ${numero || '?'} criado na situação ${payload.situacao.id === 6 ? 'Em aberto' : payload.situacao.id}${createdContact ? '; cliente cadastrado no Bling' : ''}. Total R$ ${Number(preview.total).toFixed(2)}.`,
@@ -824,6 +830,44 @@ async function sendDeal(dealId, { confirmarAvisos = false, origem = 'manual' } =
     blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'erro',
       mensagem: `${conexao ? 'Falha de comunicação com o Bling: ' : ''}${err.message}`, payload, response: err.response || null });
     return { ok: false, codigo: 'falha_envio', mensagem: err.message, preview, retryable: conexao };
+  }
+}
+
+// ==========================================================
+// Número da O.S. = número do pedido no Bling
+// ==========================================================
+
+// Monta o número no mesmo formato configurado para as O.S. (ex.: "{NUM}/26" -> "5301/26")
+function formatOsNumber(pedidoNumero) {
+  const formato = osDb.getSetting('orcamento_formato', '{NUM}/26');
+  const padding = parseInt(osDb.getSetting('orcamento_padding', '4'), 10) || 4;
+  const now = new Date();
+  return formato
+    .replace('{NUM}', String(pedidoNumero).padStart(padding, '0'))
+    .replace('{NUM_RAW}', String(pedidoNumero))
+    .replace('{YY}', String(now.getFullYear()).slice(-2))
+    .replace('{YYYY}', String(now.getFullYear()));
+}
+
+// Ajusta somente o número da O.S. do negócio (nenhum outro campo é alterado)
+function syncOsNumber(dealId, origem = 'automatico') {
+  try {
+    const row = blingDb.getOrderByDeal(dealId);
+    if (!row || !row.bling_pedido_numero) return null;
+    const os = osDb.getOrderByMoskitId(Number(dealId));
+    if (!os) return null; // a O.S. ainda não existe: será ajustada quando for criada
+    const novo = formatOsNumber(row.bling_pedido_numero);
+    if (!novo || os.orcamento_numero === novo) return null;
+    const anterior = os.orcamento_numero;
+    osDb.updateOrder(os.id, { orcamento_numero: novo }, null);
+    const repetidas = osDb.db.prepare('SELECT COUNT(*) AS n FROM service_orders WHERE orcamento_numero = ? AND id <> ?').get(novo, os.id).n;
+    blingDb.addHistory({ dealId, origem, evento: 'os', resultado: 'info',
+      mensagem: `O.S. renumerada de ${anterior} para ${novo} (mesmo número do pedido no Bling).${repetidas ? ` Atenção: já existe outra O.S. com o número ${novo}.` : ''}`,
+      pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero });
+    return { anterior, novo };
+  } catch (e) {
+    blingDb.addHistory({ dealId, origem, evento: 'os', resultado: 'erro', mensagem: `Não foi possível ajustar o número da O.S.: ${e.message}` });
+    return null;
   }
 }
 
@@ -1123,6 +1167,8 @@ async function diagnosticarPermissoes() {
 }
 
 module.exports = {
+  syncOsNumber,
+  formatOsNumber,
   isRecentWin,
   diagnosticarPermissoes,
   processWebhookDeal,
