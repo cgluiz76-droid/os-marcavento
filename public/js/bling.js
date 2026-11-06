@@ -420,6 +420,7 @@ const BlingManager = {
               ${['pendente', 'erro'].includes(r.status) ? `<button type="button" class="btn btn-secondary btn-sm" data-act="ignorar" data-id="${r.moskit_deal_id}" title="Não enviar este negócio">Ignorar</button>` : ''}
               ${r.status === 'ignorado' ? `<button type="button" class="btn btn-secondary btn-sm" data-act="reativar" data-id="${r.moskit_deal_id}">Reativar</button>` : ''}
               ${r.status === 'alteracao_pendente' ? `<button type="button" class="btn btn-primary btn-sm" data-act="alteracao" data-id="${r.moskit_deal_id}">📝 Revisar alteração</button>` : ''}
+              ${r.status === 'enviado' ? `<button type="button" class="btn btn-secondary btn-sm" data-act="conferir" data-id="${r.moskit_deal_id}" title="Conferir e, se quiser, substituir os dados no Bling">🔎 Conferir</button>` : ''}
               <button type="button" class="btn btn-secondary btn-sm" data-act="log" data-id="${r.moskit_deal_id}" title="Histórico deste negócio">🕘</button>
             </div></td>
           </tr>`).join('');
@@ -615,7 +616,7 @@ const BlingManager = {
     const c = document.getElementById('bling-preview-container');
     const nivelPill = (n) => `<span class="bling-pill ${n}">${n === 'ok' ? 'OK' : n === 'aviso' ? 'Atenção' : 'Erro'}</span>`;
     const fila = p.fila;
-    const jaEnviado = fila && fila.status === 'enviado';
+    const jaEnviado = fila && ['enviado', 'alteracao_pendente'].includes(fila.status);
 
     let html = `
       <div class="bling-deal-header">
@@ -631,7 +632,7 @@ const BlingManager = {
     if (resultado) html += resultado;
 
     if (jaEnviado) {
-      html += `<div class="bling-box ok"><strong class="title">Pedido já enviado</strong>Pedido Bling nº ${this.esc(fila.bling_pedido_numero || fila.bling_pedido_id)}. Nenhum novo envio é possível para este negócio.</div>`;
+      html += `<div class="bling-box ok"><strong class="title">Pedido já criado no Bling</strong>Pedido Bling nº ${this.esc(fila.bling_pedido_numero || fila.bling_pedido_id)}. Um novo pedido não será criado. No final desta tela você pode <strong>substituir os dados desse pedido</strong> pelos dados conferidos agora.</div>`;
     }
     if (p.erros.length && !jaEnviado) {
       html += `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de enviar</strong><ul>${p.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>`;
@@ -686,6 +687,15 @@ const BlingManager = {
     html += `<details class="bling-json"><summary>Ver dados técnicos que serão enviados ao Bling (JSON)</summary>
       <pre>${this.esc(JSON.stringify({ contatoNovo: p.contatoPayload, pedido: p.payload }, null, 2))}</pre></details>`;
 
+    // Negócio que já gerou pedido: opção de substituir os dados no Bling
+    if (jaEnviado) {
+      html += `<div id="bling-substituir-box"><div class="bling-loading">Comparando com o pedido no Bling…</div></div>`;
+      c.innerHTML = html;
+      document.getElementById('bling-btn-reconferir-top')?.remove();
+      this.loadSubstituir(p.deal.id, fila);
+      return;
+    }
+
     // Barra de confirmação
     const bloqueado = p.erros.length > 0 || jaEnviado;
     html += `<div class="bling-confirm-bar">
@@ -703,6 +713,64 @@ const BlingManager = {
     chk?.addEventListener('change', () => { btn.disabled = !chk.checked; });
     btn?.addEventListener('click', () => this.enviar());
     document.getElementById('bling-btn-reconferir')?.addEventListener('click', () => this.conferir(this.dealAtual));
+  },
+
+  async loadSubstituir(dealId, fila) {
+    const box = document.getElementById('bling-substituir-box');
+    if (!box) return;
+    try {
+      const r = await this.api(`/api/bling/substituir/${encodeURIComponent(dealId)}`);
+      if (!r.ok) { box.innerHTML = `<div class="bling-box info">${this.esc(r.mensagem || '')}</div>`; return; }
+      const num = r.pedido.numero || r.pedido.id;
+      const semDif = !r.diff.length;
+      box.innerHTML = `
+        <div class="bling-section-title">Substituir o pedido nº ${this.esc(num)} no Bling</div>
+        ${semDif
+          ? '<div class="bling-box info">Os campos principais (cliente, datas, itens, total e observações) estão iguais aos do pedido no Bling. Você ainda pode substituir, por exemplo, para reenviar dados de cadastro ou configuração.</div>'
+          : `<div class="bling-box aviso"><strong class="title">📝 Diferenças entre o pedido no Bling e os dados conferidos agora</strong></div>${this.diffTable(r.diff)}`}
+        ${r.erros.length ? `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de substituir</strong><ul>${r.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>` : ''}
+        <div class="bling-confirm-bar">
+          <label><input type="checkbox" id="bling-chk-substituir" ${r.erros.length ? 'disabled' : ''}> Confirmo que quero substituir os dados do pedido nº ${this.esc(num)} no Bling pelos dados conferidos agora</label>
+          <div class="bling-confirm-buttons">
+            <button type="button" class="btn btn-secondary" id="bling-btn-reconferir">🔄 Conferir novamente</button>
+            <button type="button" class="btn btn-danger" id="bling-btn-substituir" disabled>♻️ Substituir no Bling</button>
+          </div>
+        </div>
+        <p class="bling-hint" style="margin-top: 0.5rem;">A substituição só é feita enquanto o pedido estiver na situação inicial (Em aberto) no Bling. Os dados anteriores ficam guardados no Histórico.</p>`;
+      const chk = document.getElementById('bling-chk-substituir');
+      const btn = document.getElementById('bling-btn-substituir');
+      chk?.addEventListener('change', () => { btn.disabled = !chk.checked; });
+      btn?.addEventListener('click', () => this.substituir(dealId, num));
+      document.getElementById('bling-btn-reconferir')?.addEventListener('click', () => this.conferir(dealId));
+    } catch (e) {
+      box.innerHTML = `<div class="bling-box erro">${this.esc(e.message)}</div>`;
+    }
+  },
+
+  async substituir(dealId, num) {
+    if (!confirm(`Substituir os dados do pedido nº ${num} no Bling pelos dados conferidos agora?\n\nOs dados anteriores ficam guardados no Histórico.`)) return;
+    const btn = document.getElementById('bling-btn-substituir');
+    if (btn) { btn.disabled = true; btn.textContent = 'Substituindo…'; }
+    try {
+      const res = await fetch(`/api/bling/substituir/${encodeURIComponent(dealId)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmado: true })
+      });
+      const r = await res.json().catch(() => ({}));
+      const box = document.getElementById('bling-substituir-box');
+      if (r.ok) {
+        this.toast(`Pedido nº ${num} atualizado no Bling.`, 'success');
+        if (box) box.innerHTML = `<div class="bling-box ok"><strong class="title">✅ Pedido nº ${this.esc(num)} substituído no Bling</strong>Os dados anteriores e os novos estão no Histórico.</div>
+          <div class="bling-actions-right"><button type="button" class="btn btn-secondary" id="bling-btn-voltar-fila">← Voltar para a fila</button></div>`;
+        document.getElementById('bling-btn-voltar-fila')?.addEventListener('click', () => this.showTab('fila'));
+      } else {
+        if (box) box.insertAdjacentHTML('afterbegin', `<div class="bling-box erro"><strong class="title">O pedido não foi substituído</strong>${this.esc(r.mensagem || r.error || 'Erro desconhecido')}</div>`);
+        if (btn) { btn.disabled = false; btn.textContent = '♻️ Substituir no Bling'; }
+      }
+      this.refreshBadge();
+    } catch (e) {
+      this.toast('Falha: ' + e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '♻️ Substituir no Bling'; }
+    }
   },
 
   async enviar() {
