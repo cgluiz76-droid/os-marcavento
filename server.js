@@ -34,7 +34,16 @@ function registrarChegadaWebhook(req, extra = {}) {
     blingDb.setConfig('webhook_chegadas', JSON.stringify(lista.slice(0, 30)));
   } catch (e) { /* nunca derruba a requisição */ }
 }
-app.use('/api/webhook/moskit', (req, res, next) => { registrarChegadaWebhook(req); next(); });
+app.use('/api/webhook/moskit', (req, res, next) => {
+  const inicio = Date.now();
+  registrarChegadaWebhook(req, { caminho: req.originalUrl.split('?')[0], fase: 'chegou' });
+  res.on('finish', () => {
+    let resumo = '';
+    try { resumo = res.locals.webhookResumo || ''; } catch (e) { resumo = ''; }
+    registrarChegadaWebhook(req, { caminho: req.originalUrl.split('?')[0], fase: 'respondeu', resposta: res.statusCode, ms: Date.now() - inicio, resultado: String(resumo).slice(0, 200) });
+  });
+  next();
+});
 
 // Estrutura do conteúdo recebido (apenas nomes e tipos dos campos, nunca os valores)
 function formatoPayload(v, depth = 0) {
@@ -280,7 +289,13 @@ app.post('/api/moskit/import-deal/:dealId', async (req, res) => {
 });
 
 // Webhook listener for Moskit CRM
-app.post('/api/webhook/moskit', async (req, res) => {
+app.post('/api/webhook/moskit', async (req, res, next) => {
+  const jsonOriginal = res.json.bind(res);
+  res.json = (body) => { try { res.locals.webhookResumo = JSON.stringify(body); } catch (e) { /* ignora */ } return jsonOriginal(body); };
+  return webhookMoskitHandler(req, res, next);
+});
+
+async function webhookMoskitHandler(req, res) {
   // Proteção opcional: só é exigida depois que um token for gerado na tela do Bling.
   // Sem token configurado, o webhook funciona exatamente como antes.
   let expectedToken = '';
@@ -409,7 +424,7 @@ app.post('/api/webhook/moskit', async (req, res) => {
     // Always return 200 to webhook caller to prevent retries storm, but log error
     res.status(200).json({ received: true, error: err.message });
   }
-});
+}
 
 // ==========================================
 // API ROUTES: FIELD MAPPINGS
