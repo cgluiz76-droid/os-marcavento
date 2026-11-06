@@ -36,6 +36,28 @@ function registrarChegadaWebhook(req, extra = {}) {
 }
 app.use('/api/webhook/moskit', (req, res, next) => { registrarChegadaWebhook(req); next(); });
 
+// Estrutura do conteúdo recebido (apenas nomes e tipos dos campos, nunca os valores)
+function formatoPayload(v, depth = 0) {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return depth > 2 ? 'array' : [v.length ? formatoPayload(v[0], depth + 1) : 'vazio'];
+  if (typeof v === 'object') {
+    if (depth > 2) return 'objeto';
+    const out = {};
+    for (const k of Object.keys(v).slice(0, 25)) out[k] = formatoPayload(v[k], depth + 1);
+    return out;
+  }
+  if (typeof v === 'string' && /^[A-Z_.]{2,40}$/i.test(v) && depth <= 1) return `texto:${v}`; // nomes de evento/status
+  return typeof v;
+}
+function registrarFormatoWebhook(body, extra = {}) {
+  try {
+    let lista = [];
+    try { lista = JSON.parse(blingDb.getConfig('webhook_formatos', '[]')) || []; } catch (e) { lista = []; }
+    lista.unshift({ em: new Date().toISOString(), formato: formatoPayload(body), ...extra });
+    blingDb.setConfig('webhook_formatos', JSON.stringify(lista.slice(0, 10)));
+  } catch (e) { /* nunca derruba a requisição */ }
+}
+
 app.use(express.json({ limit: '25mb' }));
 // Aceita também corpo em texto (alguns serviços enviam JSON sem o Content-Type correto)
 app.use('/api/webhook/moskit', express.text({ type: () => true, limit: '5mb' }), (req, res, next) => {
@@ -304,6 +326,7 @@ app.post('/api/webhook/moskit', async (req, res) => {
     };
 
     if (!dealData) {
+      registrarFormatoWebhook(payload, { acao: 'sem dados de negócio reconhecíveis' });
       registrarWebhook('ignorado: sem dados de negócio');
       console.warn('[Webhook] Payload não contém informações identificáveis de negócio');
       return res.status(200).json({ received: true, ignored: 'Sem dados de deal' });
@@ -324,7 +347,7 @@ app.post('/api/webhook/moskit', async (req, res) => {
     // Check status: only process won / Ganhou deals or stage change to won
     const status = String(dealData.status || '').toUpperCase();
     const isWon = status === 'WON' || status === 'GANHOU' || dealData.won === true ||
-                  (payload.event && payload.event.includes('WON'));
+                  (typeof payload.event === 'string' && payload.event.toUpperCase().includes('WON'));
 
     if (isWon) {
       console.log(`[Webhook] Negócio GANHOU detectado! ID: ${dealData.id} - ${dealData.name}`);
@@ -382,6 +405,7 @@ app.post('/api/webhook/moskit', async (req, res) => {
     }
   } catch (err) {
     console.error('[Webhook Erro]:', err);
+    registrarFormatoWebhook(req.body, { erro: String(err.message || err).slice(0, 200) });
     // Always return 200 to webhook caller to prevent retries storm, but log error
     res.status(200).json({ received: true, error: err.message });
   }
