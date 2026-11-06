@@ -32,6 +32,9 @@ const BlingManager = {
     document.getElementById('bling-btn-salvar-config')?.addEventListener('click', () => this.saveConfig());
     document.getElementById('bling-btn-carregar-opcoes')?.addEventListener('click', () => this.loadOpcoes());
     document.getElementById('bling-btn-diagnostico')?.addEventListener('click', () => this.diagnostico());
+    document.getElementById('bling-btn-hist-filtrar')?.addEventListener('click', () => this.loadHistorico());
+    document.getElementById('bling-btn-hist-atualizar')?.addEventListener('click', () => this.loadHistorico());
+    document.getElementById('bling-hist-deal')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.loadHistorico(); });
 
     document.querySelectorAll('[data-bling-copy]').forEach(btn => {
       btn.addEventListener('click', () => this.copy(document.getElementById(btn.dataset.blingCopy)?.value || ''));
@@ -105,12 +108,13 @@ const BlingManager = {
     if (tab === 'fila') this.loadFila();
     if (tab === 'mapeamento') this.loadMapeamento();
     if (tab === 'config') this.loadStatus();
+    if (tab === 'historico') this.loadHistorico();
   },
 
   async refreshBadge() {
     try {
-      const data = await this.api('/api/bling/fila?status=pendente');
-      const n = (data.pedidos || []).length;
+      const data = await this.api('/api/bling/fila?status=todos');
+      const n = (data.pedidos || []).filter(p => ['pendente', 'erro', 'alteracao_pendente'].includes(p.status)).length;
       const badge = document.getElementById('bling-pending-badge');
       if (badge) {
         badge.textContent = n;
@@ -179,6 +183,10 @@ const BlingManager = {
       setVal('bling-cfg-loja', c.loja_id);
       const auto = document.getElementById('bling-cfg-auto');
       if (auto) auto.checked = c.auto_enfileirar !== 'false';
+      const envioAuto = document.getElementById('bling-cfg-envio-auto');
+      if (envioAuto) envioAuto.checked = c.envio_automatico !== 'false';
+      const desde = document.getElementById('bling-cfg-desde');
+      if (desde) desde.value = c.envio_automatico_desde || '';
 
       this.renderWebhookBox(data.webhook);
     } catch (e) {
@@ -274,7 +282,9 @@ const BlingManager = {
         vendedor_id: document.getElementById('bling-cfg-vendedor').value,
         categoria_id: document.getElementById('bling-cfg-categoria').value,
         loja_id: document.getElementById('bling-cfg-loja').value,
-        auto_enfileirar: document.getElementById('bling-cfg-auto').checked ? 'true' : 'false'
+        auto_enfileirar: document.getElementById('bling-cfg-auto').checked ? 'true' : 'false',
+        envio_automatico: document.getElementById('bling-cfg-envio-auto').checked ? 'true' : 'false',
+        ...(document.getElementById('bling-cfg-desde').value ? { envio_automatico_desde: document.getElementById('bling-cfg-desde').value } : {})
       };
       await this.api('/api/bling/config', { method: 'POST', body: JSON.stringify(body) });
       this.toast('Configuração salva.', 'success');
@@ -364,7 +374,7 @@ const BlingManager = {
   },
 
   // ---------- Fila ----------
-  statusLabel: { pendente: 'Pendente', enviando: 'Enviando…', enviado: 'Enviado', erro: 'Erro', ignorado: 'Ignorado' },
+  statusLabel: { pendente: 'Pendente', enviando: 'Enviando…', enviado: 'Enviado', erro: 'Erro', ignorado: 'Ignorado', alteracao_pendente: 'Alteração pendente', atualizando: 'Atualizando…' },
 
   async loadFila() {
     const body = document.getElementById('bling-fila-body');
@@ -381,7 +391,7 @@ const BlingManager = {
             <td><strong>#${this.esc(r.moskit_deal_id)}</strong><small>${this.esc(this.dateTime(r.created_at))}</small></td>
             <td>${this.esc(r.deal_name)}${r.last_error && r.status === 'erro' ? `<small style="color: var(--accent-red);">${this.esc(r.last_error)}</small>` : ''}</td>
             <td class="num">${this.money(r.deal_value)}</td>
-            <td>${r.origem === 'webhook' ? 'Automático' : 'Manual'}</td>
+            <td>${r.origem === 'webhook' ? 'Automático' : 'Manual'}${r.status === 'alteracao_pendente' && r.pending_since ? `<small>alterado em ${this.esc(this.dateTime(r.pending_since))}</small>` : ''}</td>
             <td><span class="bling-pill ${this.esc(r.status)}">${this.esc(this.statusLabel[r.status] || r.status)}</span></td>
             <td>${r.bling_pedido_numero ? `<strong>Nº ${this.esc(r.bling_pedido_numero)}</strong>` : (r.bling_pedido_id ? `id ${this.esc(r.bling_pedido_id)}` : '—')}
                 ${r.sent_at ? `<small>${this.esc(this.dateTime(r.sent_at))}</small>` : ''}</td>
@@ -389,7 +399,8 @@ const BlingManager = {
               ${['pendente', 'erro'].includes(r.status) ? `<button type="button" class="btn btn-primary btn-sm" data-act="conferir" data-id="${r.moskit_deal_id}">🔎 Conferir</button>` : ''}
               ${['pendente', 'erro'].includes(r.status) ? `<button type="button" class="btn btn-secondary btn-sm" data-act="ignorar" data-id="${r.moskit_deal_id}" title="Não enviar este negócio">Ignorar</button>` : ''}
               ${r.status === 'ignorado' ? `<button type="button" class="btn btn-secondary btn-sm" data-act="reativar" data-id="${r.moskit_deal_id}">Reativar</button>` : ''}
-              <button type="button" class="btn btn-secondary btn-sm" data-act="log" data-id="${r.moskit_deal_id}" title="Histórico">🕘</button>
+              ${r.status === 'alteracao_pendente' ? `<button type="button" class="btn btn-primary btn-sm" data-act="alteracao" data-id="${r.moskit_deal_id}">📝 Revisar alteração</button>` : ''}
+              <button type="button" class="btn btn-secondary btn-sm" data-act="log" data-id="${r.moskit_deal_id}" title="Histórico deste negócio">🕘</button>
             </div></td>
           </tr>`).join('');
         body.querySelectorAll('button[data-act]').forEach(btn => {
@@ -411,12 +422,11 @@ const BlingManager = {
         this.loadFila();
       } catch (e) { this.toast(e.message, 'error'); }
     }
+    if (act === 'alteracao') return this.revisarAlteracao(id);
     if (act === 'log') {
-      try {
-        const data = await this.api(`/api/bling/fila/${id}/log`);
-        const linhas = (data.log || []).map(l => `${this.dateTime(l.created_at)} · ${l.acao}: ${l.detalhe}`);
-        alert(linhas.length ? `Histórico do negócio #${id}\n\n${linhas.join('\n')}` : `Sem histórico para o negócio #${id}.`);
-      } catch (e) { this.toast(e.message, 'error'); }
+      const input = document.getElementById('bling-hist-deal');
+      if (input) input.value = id;
+      this.showTab('historico');
     }
   },
 
@@ -424,6 +434,145 @@ const BlingManager = {
     const v = (document.getElementById('bling-input-deal').value || '').replace(/\D/g, '');
     if (!v) return this.toast('Digite o número do negócio do Moskit.', 'error');
     this.conferir(v);
+  },
+
+  // ---------- Histórico ----------
+  eventoLabel: { envio: 'Envio do pedido', atualizacao: 'Atualização do pedido', alteracao: 'Alteração no Moskit', status_moskit: 'Status no Moskit', fila: 'Fila' },
+  resultadoPill: { sucesso: 'ok', erro: 'erro', bloqueado: 'aviso', pendente: 'pendente', info: 'ignorado' },
+  resultadoLabel: { sucesso: 'Sucesso', erro: 'Erro', bloqueado: 'Não enviado', pendente: 'Aguardando autorização', info: 'Informação' },
+
+  async loadHistorico() {
+    const body = document.getElementById('bling-hist-body');
+    if (!body) return;
+    const deal = (document.getElementById('bling-hist-deal')?.value || '').replace(/\D/g, '');
+    body.innerHTML = '<tr><td colspan="7" class="bling-loading">Carregando…</td></tr>';
+    try {
+      const data = await this.api(`/api/bling/historico?limite=300${deal ? '&negocio=' + deal : ''}`);
+      const rows = data.historico || [];
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="7" class="bling-empty">${deal ? 'Nenhum registro para o negócio #' + this.esc(deal) + '.' : 'Nenhuma importação registrada ainda.'}</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map(h => `
+        <tr>
+          <td style="white-space: nowrap;">${this.esc(this.dateTime(h.created_at))}<small>${h.origem === 'automatico' ? 'automático' : this.esc(h.origem || '')}</small></td>
+          <td>${h.moskit_deal_id ? `<a href="#" data-hist-deal="${h.moskit_deal_id}">#${this.esc(h.moskit_deal_id)}</a>` : '—'}</td>
+          <td>${this.esc(this.eventoLabel[h.evento] || h.evento || '')}</td>
+          <td><span class="bling-pill ${this.resultadoPill[h.resultado] || 'ignorado'}">${this.esc(this.resultadoLabel[h.resultado] || h.resultado || '')}</span></td>
+          <td style="max-width: 420px;">${this.esc(h.mensagem || '')}</td>
+          <td>${h.bling_pedido_numero ? 'Nº ' + this.esc(h.bling_pedido_numero) : '—'}</td>
+          <td>${h.tem_detalhes ? `<button type="button" class="btn btn-secondary btn-sm" data-hist-id="${h.id}">Detalhes</button>` : ''}</td>
+        </tr>
+        <tr class="bling-hist-detail" id="bling-hist-detail-${h.id}" style="display: none;"><td colspan="7"></td></tr>`).join('');
+      body.querySelectorAll('[data-hist-id]').forEach(b => b.addEventListener('click', () => this.toggleHistDetail(b.dataset.histId)));
+      body.querySelectorAll('[data-hist-deal]').forEach(a => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('bling-hist-deal').value = a.dataset.histDeal;
+        this.loadHistorico();
+      }));
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="7" class="bling-empty">${this.esc(e.message)}</td></tr>`;
+    }
+  },
+
+  async toggleHistDetail(id) {
+    const tr = document.getElementById(`bling-hist-detail-${id}`);
+    if (!tr) return;
+    if (tr.style.display !== 'none') { tr.style.display = 'none'; return; }
+    tr.style.display = '';
+    const td = tr.querySelector('td');
+    td.innerHTML = '<div class="bling-loading">Carregando…</div>';
+    try {
+      const { item } = await this.api(`/api/bling/historico/${id}`);
+      let html = '';
+      if (Array.isArray(item.diff_json) && item.diff_json.length) html += this.diffTable(item.diff_json);
+      if (item.payload_json) html += `<details class="bling-json" open><summary>Dados enviados ao Bling</summary><pre>${this.esc(JSON.stringify(item.payload_json, null, 2))}</pre></details>`;
+      if (item.response_json) html += `<details class="bling-json"><summary>Resposta do Bling</summary><pre>${this.esc(JSON.stringify(item.response_json, null, 2))}</pre></details>`;
+      td.innerHTML = html || '<span class="bling-hint">Sem detalhes adicionais.</span>';
+    } catch (e) { td.innerHTML = `<div class="bling-box erro">${this.esc(e.message)}</div>`; }
+  },
+
+  diffTable(diff) {
+    return `<div class="table-responsive"><table class="bling-table">
+      <thead><tr><th>Campo</th><th>No Bling (enviado)</th><th>No Moskit agora</th></tr></thead>
+      <tbody>${diff.map(d => `<tr><td><strong>${this.esc(d.campo)}</strong></td>
+        <td style="white-space: pre-line;">${this.esc(d.antes) || '<span style="color: var(--text-muted);">(vazio)</span>'}</td>
+        <td style="white-space: pre-line; color: var(--accent-gold);">${this.esc(d.depois) || '<span style="color: var(--text-muted);">(vazio)</span>'}</td></tr>`).join('')}</tbody>
+    </table></div>`;
+  },
+
+  // ---------- Alteração depois do envio ----------
+  async revisarAlteracao(dealId) {
+    this.showTab('conferencia');
+    const c = document.getElementById('bling-preview-container');
+    c.innerHTML = `<div class="bling-loading">Comparando o negócio #${this.esc(dealId)} do Moskit com o pedido no Bling…</div>`;
+    try {
+      await this.api(`/api/bling/alteracao/${encodeURIComponent(dealId)}/verificar`, { method: 'POST' }).catch(() => null);
+      const data = await this.api(`/api/bling/alteracao/${encodeURIComponent(dealId)}`);
+      this.renderAlteracao(data);
+    } catch (e) {
+      c.innerHTML = `<div class="bling-box erro">${this.esc(e.message)}</div>`;
+    }
+  },
+
+  renderAlteracao(data, extra = '') {
+    const c = document.getElementById('bling-preview-container');
+    const p = data.pedido;
+    if (p.status !== 'alteracao_pendente') {
+      c.innerHTML = extra + `<div class="bling-box ok"><strong class="title">Sem alteração pendente</strong>O pedido nº ${this.esc(p.bling_pedido_numero || p.bling_pedido_id || '')} no Bling está igual aos dados atuais do Moskit.</div>
+        <div class="bling-actions-right"><button type="button" class="btn btn-secondary" id="bling-btn-voltar-fila">← Voltar para a fila</button></div>`;
+      document.getElementById('bling-btn-voltar-fila')?.addEventListener('click', () => this.showTab('fila'));
+      return;
+    }
+    c.innerHTML = extra + `
+      <div class="bling-deal-header">
+        <div><h3>Negócio #${this.esc(p.moskit_deal_id)} · ${this.esc(p.deal_name)}</h3>
+          <small>Pedido Bling nº ${this.esc(p.bling_pedido_numero || p.bling_pedido_id)}${p.pending_since ? ' · alteração detectada em ' + this.esc(this.dateTime(p.pending_since)) : ''}</small></div>
+      </div>
+      <div class="bling-box aviso"><strong class="title">📝 O negócio foi alterado no Moskit depois que o pedido foi criado no Bling</strong>
+        Revise as diferenças. Ao autorizar, o pedido existente no Bling é <strong>sobrescrito</strong> com os dados atuais do Moskit (só é possível enquanto o pedido estiver na situação inicial, Em aberto).</div>
+      ${p.last_error ? `<div class="bling-box erro">${this.esc(p.last_error)}</div>` : ''}
+      ${data.erros && data.erros.length ? `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de autorizar</strong><ul>${data.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>` : ''}
+      ${this.diffTable(data.diff || [])}
+      <div class="bling-confirm-bar">
+        <button type="button" class="btn btn-secondary" id="bling-btn-alt-descartar">Descartar (manter o Bling como está)</button>
+        <div class="bling-confirm-buttons">
+          <button type="button" class="btn btn-secondary" id="bling-btn-voltar-fila">← Fila</button>
+          <button type="button" class="btn btn-success" id="bling-btn-alt-autorizar" ${data.erros && data.erros.length ? 'disabled' : ''}>✅ Autorizar e atualizar no Bling</button>
+        </div>
+      </div>`;
+    document.getElementById('bling-btn-voltar-fila')?.addEventListener('click', () => this.showTab('fila'));
+    document.getElementById('bling-btn-alt-autorizar')?.addEventListener('click', () => this.autorizarAlteracao(p));
+    document.getElementById('bling-btn-alt-descartar')?.addEventListener('click', () => this.descartarAlteracao(p));
+  },
+
+  async autorizarAlteracao(p) {
+    if (!confirm(`Sobrescrever o pedido nº ${p.bling_pedido_numero} no Bling com os dados atuais do Moskit?`)) return;
+    const btn = document.getElementById('bling-btn-alt-autorizar');
+    if (btn) { btn.disabled = true; btn.textContent = 'Atualizando…'; }
+    try {
+      const res = await fetch(`/api/bling/alteracao/${p.moskit_deal_id}/autorizar`, { method: 'POST' });
+      const r = await res.json();
+      const data = await this.api(`/api/bling/alteracao/${p.moskit_deal_id}`);
+      const box = r.ok
+        ? `<div class="bling-box ok"><strong class="title">✅ Pedido nº ${this.esc(p.bling_pedido_numero)} atualizado no Bling</strong>O histórico guarda os dados antes e depois.</div>`
+        : `<div class="bling-box erro"><strong class="title">O pedido não foi atualizado</strong>${this.esc(r.mensagem || r.error || 'Erro desconhecido')}</div>`;
+      this.renderAlteracao(data, box);
+      this.refreshBadge();
+    } catch (e) {
+      this.toast(e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Autorizar e atualizar no Bling'; }
+    }
+  },
+
+  async descartarAlteracao(p) {
+    if (!confirm(`Descartar a alteração e manter o pedido nº ${p.bling_pedido_numero} no Bling como está?`)) return;
+    try {
+      await this.api(`/api/bling/alteracao/${p.moskit_deal_id}/descartar`, { method: 'POST' });
+      this.toast('Alteração descartada. O pedido no Bling foi mantido.', 'success');
+      this.refreshBadge();
+      this.showTab('fila');
+    } catch (e) { this.toast(e.message, 'error'); }
   },
 
   // ---------- Conferência ----------

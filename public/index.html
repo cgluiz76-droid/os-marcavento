@@ -865,6 +865,7 @@
         <div class="bling-tabs">
           <button type="button" class="filter-pill active" data-bling-tab="fila">📋 Fila de pedidos</button>
           <button type="button" class="filter-pill" data-bling-tab="conferencia">🔎 Conferência</button>
+          <button type="button" class="filter-pill" data-bling-tab="historico">🕘 Histórico</button>
           <button type="button" class="filter-pill" data-bling-tab="mapeamento">🔀 Mapeamento</button>
           <button type="button" class="filter-pill" data-bling-tab="config">🛠️ Configuração</button>
         </div>
@@ -880,13 +881,14 @@
             </div>
             <div class="bling-filters">
               <button type="button" class="filter-pill active" data-bling-filter="pendente">Pendentes</button>
+              <button type="button" class="filter-pill" data-bling-filter="alteracao_pendente">Alteração pendente</button>
               <button type="button" class="filter-pill" data-bling-filter="erro">Com erro</button>
               <button type="button" class="filter-pill" data-bling-filter="enviado">Enviados</button>
               <button type="button" class="filter-pill" data-bling-filter="ignorado">Ignorados</button>
               <button type="button" class="filter-pill" data-bling-filter="todos">Todos</button>
             </div>
           </div>
-          <p class="bling-hint">Negócios movidos para <strong>Ganhou</strong> no Moskit entram aqui automaticamente. Nada é enviado ao Bling sem a sua conferência e confirmação.</p>
+          <p class="bling-hint" id="bling-fila-hint">Negócios movidos para <strong>Ganhou</strong> no Moskit são enviados automaticamente ao Bling. Aqui ficam os que precisam da sua atenção: pendências que impediram o envio e alterações feitas no Moskit depois que o pedido foi criado.</p>
           <div class="table-responsive">
             <table class="bling-table">
               <thead>
@@ -909,6 +911,26 @@
         <section class="bling-tab-panel" data-bling-panel="conferencia">
           <div id="bling-preview-container">
             <p class="bling-hint">Digite o número do negócio na aba <strong>Fila de pedidos</strong> ou clique em <strong>Conferir</strong> em um item da fila.</p>
+          </div>
+        </section>
+
+        <!-- ABA: HISTÓRICO -->
+        <section class="bling-tab-panel" data-bling-panel="historico">
+          <div class="bling-toolbar">
+            <div class="bling-deal-input">
+              <input type="text" id="bling-hist-deal" inputmode="numeric" placeholder="Filtrar por nº do negócio">
+              <button type="button" class="btn btn-secondary" id="bling-btn-hist-filtrar">🔎 Filtrar</button>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="bling-btn-hist-atualizar">🔄 Atualizar</button>
+          </div>
+          <p class="bling-hint">Registro de todas as importações: envios automáticos e manuais, falhas de conexão, pendências e alterações. Clique em <strong>Detalhes</strong> para ver os dados enviados e a resposta do Bling.</p>
+          <div class="table-responsive">
+            <table class="bling-table">
+              <thead>
+                <tr><th>Data/hora</th><th>Negócio</th><th>Evento</th><th>Resultado</th><th>Mensagem</th><th>Pedido Bling</th><th></th></tr>
+              </thead>
+              <tbody id="bling-hist-body"></tbody>
+            </table>
           </div>
         </section>
 
@@ -986,6 +1008,17 @@
             <div class="form-group">
               <label for="bling-cfg-loja">ID da loja (opcional)</label>
               <input type="text" id="bling-cfg-loja" inputmode="numeric">
+            </div>
+            <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 0.75rem;">
+              <input type="checkbox" id="bling-cfg-envio-auto" style="width: 20px; height: 20px;">
+              <label for="bling-cfg-envio-auto" style="text-transform: none; font-size: 0.92rem; cursor: pointer;">
+                <strong>Enviar automaticamente ao Bling</strong> os negócios que chegarem como Ganhou (sem conferência manual). Pendências e possíveis duplicidades ficam na fila.
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="bling-cfg-desde">Considerar só negócios ganhos a partir de</label>
+              <input type="date" id="bling-cfg-desde">
+              <small style="color: var(--text-muted);">Negócios ganhos antes desta data (já tratados pelo Pluga) são ignorados pelo webhook, mesmo se forem editados no Moskit. Use "Nº do negócio" na fila para lançar um manualmente.</small>
             </div>
             <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 0.75rem;">
               <input type="checkbox" id="bling-cfg-auto" style="width: 20px; height: 20px;">

@@ -11,6 +11,7 @@ const skuDictionary = require('./skuDictionary');
 const crypto = require('crypto');
 const blingDb = require('./blingDb');
 const blingRoutes = require('./blingRoutes');
+const blingService = require('./blingService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -219,6 +220,8 @@ app.post('/api/moskit/import-deal/:dealId', async (req, res) => {
     const dealId = req.params.dealId;
     const fullDeal = await moskitService.fetchFullDeal(dealId);
     const result = await moskitService.importDeal(fullDeal);
+    // Se o pedido já existe no Bling, a O.S. recebe o mesmo número
+    try { blingService.syncOsNumber(fullDeal.id || dealId, 'manual'); } catch (e) { /* isolado */ }
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -306,15 +309,22 @@ app.post('/api/webhook/moskit', async (req, res) => {
         }
       }
 
-      // Integração Bling: apenas coloca o negócio na fila de conferência (nada é enviado
-      // ao Bling sem confirmação na tela). Isolado para nunca afetar a criação da O.S.
-      try {
-        if (blingDb.getConfig('auto_enfileirar', 'true') !== 'false') {
-          blingDb.enqueue(fullDeal.id || dealData.id, fullDeal.name || dealData.name, fullDeal.price || dealData.price, 'webhook');
-        }
-      } catch (blingErr) {
-        console.warn('[Webhook] Aviso ao enfileirar para o Bling:', blingErr.message);
+      const blingDealId = fullDeal.id || dealData.id;
+
+      // Negócio ganho ANTES da data de corte, sem O.S. e fora da integração: ignorado
+      // (o Moskit avisa a cada edição, inclusive de negócios antigos)
+      let recente = true;
+      try { recente = blingService.isRecentWin(fullDeal.closeDate || dealData.closeDate); } catch (e) { recente = true; }
+      if (!recente && !db.getOrderByMoskitId(blingDealId) && !blingDb.getOrderByDeal(blingDealId)) {
+        registrarWebhook(`ignorado: ganho antes de ${blingDb.getConfig('envio_automatico_desde', '')} (negócio antigo)`);
+        return res.status(200).json({ received: true, ignored: 'Negócio ganho antes da data de corte' });
       }
+
+      // Integração Bling em segundo plano (envio automático, fila e detecção de alterações).
+      // Isolado: nunca afeta a O.S. nem a resposta ao Moskit.
+      setImmediate(() => {
+        blingService.processWebhookDeal(blingDealId, { won: true, nome: fullDeal.name || dealData.name, valor: fullDeal.price || dealData.price, closeDate: fullDeal.closeDate || dealData.closeDate }).catch(e => console.warn('[Webhook] Bling:', e.message));
+      });
 
       // O Moskit dispara o webhook a cada EDIÇÃO do negócio. Se a O.S. já existe,
       // ela NÃO é sobrescrita (preserva data, itens e edições feitas à mão).
@@ -325,10 +335,19 @@ app.post('/api/webhook/moskit', async (req, res) => {
       }
 
       const result = await moskitService.importDeal(fullDeal);
+      // Se o pedido já existe no Bling, a O.S. recebe o mesmo número
+      try { blingService.syncOsNumber(fullDeal.id || dealData.id, 'webhook'); } catch (e) { /* isolado */ }
       registrarWebhook(`O.S. ${result.order.orcamento_numero} criada`);
       return res.status(200).json({ success: true, action: result.action, orderId: result.order.id });
     } else {
       registrarWebhook('ignorado: negócio não está como Ganhou');
+      // Se o pedido já foi criado no Bling, registra no histórico a mudança de status no Moskit
+      try {
+        if (dealData.id && blingDb.getOrderByDeal(dealData.id)) {
+          const st = dealData.status;
+          setImmediate(() => blingService.processWebhookDeal(dealData.id, { won: false, status: st }).catch(() => {}));
+        }
+      } catch (e) { /* isolado */ }
       console.log(`[Webhook] Negócio ID ${dealData.id} ignorado pois status é "${dealData.status}" (não é Ganhou)`);
       return res.status(200).json({ received: true, ignored: `Status ${dealData.status} não é Ganhou` });
     }
