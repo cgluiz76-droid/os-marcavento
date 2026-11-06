@@ -100,6 +100,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; gap: 0
 .bling-pill.enviado, .bling-pill.ok { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border-color: rgba(16, 185, 129, 0.35); }
 .bling-pill.erro { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border-color: rgba(239, 68, 68, 0.35); }
 .bling-pill.aviso { background: rgba(245, 158, 11, 0.15); color: var(--accent-gold); border-color: rgba(245, 158, 11, 0.35); }
+.bling-pill.alteracao_pendente { background: rgba(14, 165, 233, 0.15); color: var(--accent-blue); border-color: rgba(14, 165, 233, 0.35); }
+.bling-pill.atualizando { background: rgba(14, 165, 233, 0.15); color: var(--accent-blue); border-color: rgba(14, 165, 233, 0.35); }
+.bling-hist-detail td { background: var(--bg-secondary); }
 .bling-pill.ignorado { background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border-color: var(--border-color); }
 
 .bling-box {

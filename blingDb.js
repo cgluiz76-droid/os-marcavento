@@ -97,6 +97,37 @@ function initBlingTables() {
 
 initBlingTables();
 
+// Histórico de importações e controle de alterações após o envio (aditivo)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bling_historico (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    moskit_deal_id INTEGER,
+    origem TEXT,
+    evento TEXT,
+    resultado TEXT,
+    mensagem TEXT,
+    bling_pedido_id TEXT,
+    bling_pedido_numero TEXT,
+    payload_json TEXT,
+    response_json TEXT,
+    diff_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_bling_historico_deal ON bling_historico (moskit_deal_id, id);
+`);
+for (const col of ['pending_payload TEXT', 'pending_diff TEXT', 'pending_since DATETIME', 'discarded_signature TEXT', 'ultimo_status_moskit TEXT']) {
+  try { db.exec(`ALTER TABLE bling_orders ADD COLUMN ${col};`); } catch (e) { /* já existe */ }
+}
+// Data de corte: só negócios ganhos a partir da ativação entram automaticamente
+// (os anteriores já foram tratados pelo Pluga)
+if (!db.prepare("SELECT key FROM bling_config WHERE key = 'envio_automatico_desde'").get()) {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  db.prepare("INSERT INTO bling_config (key, value) VALUES ('envio_automatico_desde', ?)").run(hoje);
+}
+if (!db.prepare("SELECT key FROM bling_config WHERE key = 'envio_automatico'").get()) {
+  db.prepare("INSERT INTO bling_config (key, value) VALUES ('envio_automatico', 'true')").run();
+}
+
 // ---------- Configuração ----------
 function getConfig(key, def = '') {
   const row = db.prepare('SELECT value FROM bling_config WHERE key = ?').get(key);
@@ -149,7 +180,7 @@ function getOrderByDeal(dealId) {
 
 function listOrders(status = '') {
   const cols = `id, moskit_deal_id, deal_name, deal_value, origem, status, bling_pedido_id,
-                bling_pedido_numero, last_error, created_at, updated_at, sent_at`;
+                bling_pedido_numero, last_error, created_at, updated_at, sent_at, pending_since`;
   if (status && status !== 'todos') {
     return db.prepare(`SELECT ${cols} FROM bling_orders WHERE status = ? ORDER BY id DESC LIMIT 200`).all(status);
   }
@@ -187,6 +218,12 @@ function releaseStaleLocks() {
       last_error = 'Envio interrompido (servidor reiniciado). Confira no Bling antes de reenviar; o sistema verifica duplicidade automaticamente.',
       updated_at = CURRENT_TIMESTAMP
     WHERE status = 'enviando'
+  `).run();
+  db.prepare(`
+    UPDATE bling_orders SET status = 'alteracao_pendente',
+      last_error = 'Atualização interrompida (servidor reiniciado). Revise e autorize novamente.',
+      updated_at = CURRENT_TIMESTAMP
+    WHERE status = 'atualizando'
   `).run();
 }
 
@@ -241,7 +278,105 @@ function getLog(dealId) {
   return db.prepare('SELECT acao, detalhe, created_at FROM bling_log WHERE moskit_deal_id = ? ORDER BY id DESC LIMIT 50').all(Number(dealId));
 }
 
+// ---------- Histórico ----------
+function addHistory({ dealId, origem, evento, resultado, mensagem, pedidoId, pedidoNumero, payload, response, diff }) {
+  try {
+    const j = (v) => (v === undefined || v === null) ? null : JSON.stringify(v).slice(0, 200000);
+    db.prepare(`
+      INSERT INTO bling_historico (moskit_deal_id, origem, evento, resultado, mensagem, bling_pedido_id, bling_pedido_numero, payload_json, response_json, diff_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(dealId ? Number(dealId) : null, origem || null, evento || null, resultado || null,
+      mensagem ? String(mensagem).slice(0, 4000) : null,
+      pedidoId ? String(pedidoId) : null, pedidoNumero ? String(pedidoNumero) : null, j(payload), j(response), j(diff));
+  } catch (e) { /* o histórico nunca derruba o fluxo */ }
+}
+
+function listHistory({ dealId, limite } = {}) {
+  const lim = Math.min(500, Math.max(1, parseInt(limite, 10) || 200));
+  const cols = 'id, moskit_deal_id, origem, evento, resultado, mensagem, bling_pedido_id, bling_pedido_numero, created_at, (payload_json IS NOT NULL OR response_json IS NOT NULL OR diff_json IS NOT NULL) AS tem_detalhes';
+  if (dealId) return db.prepare(`SELECT ${cols} FROM bling_historico WHERE moskit_deal_id = ? ORDER BY id DESC LIMIT ?`).all(Number(dealId), lim);
+  return db.prepare(`SELECT ${cols} FROM bling_historico ORDER BY id DESC LIMIT ?`).all(lim);
+}
+
+function getHistoryEntry(id) {
+  const row = db.prepare('SELECT * FROM bling_historico WHERE id = ?').get(Number(id));
+  if (!row) return null;
+  for (const k of ['payload_json', 'response_json', 'diff_json']) {
+    try { row[k] = row[k] ? JSON.parse(row[k]) : null; } catch (e) { /* mantém texto */ }
+  }
+  return row;
+}
+
+function lastHistoryFor(dealId) {
+  return db.prepare('SELECT * FROM bling_historico WHERE moskit_deal_id = ? ORDER BY id DESC LIMIT 1').get(Number(dealId)) || null;
+}
+
+// ---------- Alterações depois do envio ----------
+function setPendingChange(dealId, payload, diff) {
+  db.prepare(`
+    UPDATE bling_orders SET status = 'alteracao_pendente', pending_payload = ?, pending_diff = ?,
+      pending_since = COALESCE(pending_since, CURRENT_TIMESTAMP), last_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ? AND status IN ('enviado', 'alteracao_pendente')
+  `).run(JSON.stringify(payload), JSON.stringify(diff), Number(dealId));
+}
+
+function clearPendingChange(dealId, { discardedSignature } = {}) {
+  db.prepare(`
+    UPDATE bling_orders SET status = 'enviado', pending_payload = NULL, pending_diff = NULL, pending_since = NULL,
+      discarded_signature = COALESCE(?, discarded_signature), last_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ? AND status IN ('alteracao_pendente', 'atualizando', 'enviado')
+  `).run(discardedSignature || null, Number(dealId));
+}
+
+function tryLockForUpdate(dealId) {
+  const r = db.prepare(`
+    UPDATE bling_orders SET status = 'atualizando', updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ? AND status = 'alteracao_pendente'
+  `).run(Number(dealId));
+  return r.changes === 1;
+}
+
+function releaseUpdateLock(dealId, errorMessage) {
+  db.prepare(`
+    UPDATE bling_orders SET status = 'alteracao_pendente', last_error = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ? AND status = 'atualizando'
+  `).run(errorMessage ? String(errorMessage).slice(0, 4000) : null, Number(dealId));
+}
+
+function markUpdated(dealId, { contatoId, request, response }) {
+  db.prepare(`
+    UPDATE bling_orders SET status = 'enviado', request_json = ?, response_json = ?, bling_contato_id = COALESCE(?, bling_contato_id),
+      pending_payload = NULL, pending_diff = NULL, pending_since = NULL, discarded_signature = NULL,
+      last_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ?
+  `).run(JSON.stringify(request), response ? JSON.stringify(response) : null, contatoId ? String(contatoId) : null, Number(dealId));
+}
+
+function setBlocked(dealId, status, message) {
+  // Usado pelo envio automático: negócio não enviado por pendência (fica na fila com o motivo)
+  if (!['pendente', 'erro'].includes(status)) throw new Error('Status inválido.');
+  db.prepare(`
+    UPDATE bling_orders SET status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE moskit_deal_id = ? AND status IN ('pendente', 'erro')
+  `).run(status, String(message || '').slice(0, 4000), Number(dealId));
+}
+
+function setMoskitStatus(dealId, status) {
+  db.prepare('UPDATE bling_orders SET ultimo_status_moskit = ? WHERE moskit_deal_id = ?').run(status ? String(status) : null, Number(dealId));
+}
+
 module.exports = {
+  addHistory,
+  listHistory,
+  getHistoryEntry,
+  lastHistoryFor,
+  setPendingChange,
+  clearPendingChange,
+  tryLockForUpdate,
+  releaseUpdateLock,
+  markUpdated,
+  setBlocked,
+  setMoskitStatus,
   getConfig,
   setConfig,
   getPublicConfig,

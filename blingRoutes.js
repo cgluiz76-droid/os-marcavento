@@ -84,7 +84,7 @@ router.get('/api/bling/callback', async (req, res) => {
 
 // ---------- Configurações do pedido ----------
 
-const CONFIG_KEYS = ['situacao_id', 'prazo_dias', 'forma_pagamento_id', 'categoria_id', 'vendedor_id', 'loja_id', 'auto_enfileirar'];
+const CONFIG_KEYS = ['situacao_id', 'prazo_dias', 'forma_pagamento_id', 'categoria_id', 'vendedor_id', 'loja_id', 'auto_enfileirar', 'envio_automatico', 'envio_automatico_desde'];
 
 router.post('/api/bling/config', (req, res) => {
   try {
@@ -92,7 +92,10 @@ router.post('/api/bling/config', (req, res) => {
     for (const k of CONFIG_KEYS) {
       if (body[k] === undefined) continue;
       let v = String(body[k]).trim();
-      if (k === 'auto_enfileirar') v = v === 'false' ? 'false' : 'true';
+      if (k === 'auto_enfileirar' || k === 'envio_automatico') v = v === 'false' ? 'false' : 'true';
+      else if (k === 'envio_automatico_desde') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return sendError(res, new Error('Data de corte inválida.'), 400);
+      }
       else if (v !== '' && !/^\d+$/.test(v)) return sendError(res, new Error(`Valor inválido para ${k}: use apenas números.`), 400);
       if (k === 'situacao_id' && !v) v = '6';
       if (k === 'prazo_dias' && !v) v = '30';
@@ -120,6 +123,53 @@ router.get('/api/bling/opcoes', async (req, res) => {
 router.get('/api/bling/diagnostico', async (req, res) => {
   try {
     res.json({ success: true, permissoes: await blingService.diagnosticarPermissoes() });
+  } catch (err) { sendError(res, err); }
+});
+
+// ---------- Histórico de importações ----------
+router.get('/api/bling/historico', (req, res) => {
+  try {
+    const deal = String(req.query.negocio || '').replace(/\D/g, '');
+    res.json({ success: true, historico: blingDb.listHistory({ dealId: deal || null, limite: req.query.limite }) });
+  } catch (err) { sendError(res, err); }
+});
+
+router.get('/api/bling/historico/:id', (req, res) => {
+  try {
+    const item = blingDb.getHistoryEntry(req.params.id);
+    if (!item) return sendError(res, new Error('Registro não encontrado.'), 404);
+    res.json({ success: true, item });
+  } catch (err) { sendError(res, err); }
+});
+
+// ---------- Alterações no Moskit depois do envio ----------
+router.get('/api/bling/alteracao/:dealId', (req, res) => {
+  try {
+    const info = blingService.getPendingChange(req.params.dealId);
+    if (!info) return sendError(res, new Error('Negócio não encontrado na fila.'), 404);
+    res.json({ success: true, ...info });
+  } catch (err) { sendError(res, err); }
+});
+
+router.post('/api/bling/alteracao/:dealId/autorizar', async (req, res) => {
+  try {
+    const r = await blingService.applyPendingChange(req.params.dealId);
+    res.status(r.ok ? 200 : 409).json({ success: r.ok, ...r });
+  } catch (err) { sendError(res, err); }
+});
+
+router.post('/api/bling/alteracao/:dealId/descartar', (req, res) => {
+  try {
+    const r = blingService.discardPendingChange(req.params.dealId);
+    res.status(r.ok ? 200 : 409).json({ success: r.ok, ...r });
+  } catch (err) { sendError(res, err); }
+});
+
+// Verifica manualmente se o negócio mudou no Moskit depois do envio
+router.post('/api/bling/alteracao/:dealId/verificar', async (req, res) => {
+  try {
+    const r = await blingService.detectChange(Number(req.params.dealId), 'manual');
+    res.json({ success: true, ...r });
   } catch (err) { sendError(res, err); }
 });
 
