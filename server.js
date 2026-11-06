@@ -46,16 +46,18 @@ app.use('/api/webhook/moskit', (req, res, next) => {
 });
 
 // Estrutura do conteúdo recebido (apenas nomes e tipos dos campos, nunca os valores)
-function formatoPayload(v, depth = 0) {
+function formatoPayload(v, depth = 0, emMetadata = false) {
   if (v === null) return 'null';
-  if (Array.isArray(v)) return depth > 2 ? 'array' : [v.length ? formatoPayload(v[0], depth + 1) : 'vazio'];
+  if (Array.isArray(v)) return depth > 2 ? 'array' : [v.length ? formatoPayload(v[0], depth + 1, emMetadata) : 'vazio'];
   if (typeof v === 'object') {
     if (depth > 2) return 'objeto';
     const out = {};
-    for (const k of Object.keys(v).slice(0, 25)) out[k] = formatoPayload(v[k], depth + 1);
+    for (const k of Object.keys(v).slice(0, 40)) out[k] = formatoPayload(v[k], depth + 1, emMetadata || (depth === 0 && k === 'metadata'));
     return out;
   }
-  if (typeof v === 'string' && /^[A-Z_.]{2,40}$/i.test(v) && depth <= 1) return `texto:${v}`; // nomes de evento/status
+  // Mostra só valores do tipo "código" (ex.: DEAL_UPDATED, WON); nunca nomes ou dados de cliente
+  if (typeof v === 'string' && /^[A-Z_.]{2,40}$/.test(v) && (depth <= 1 || emMetadata)) return `texto:${v}`;
+  if (typeof v === 'string' && emMetadata && /^[a-z_.]{2,30}$/.test(v)) return `texto:${v}`;
   return typeof v;
 }
 function registrarFormatoWebhook(body, extra = {}) {
@@ -323,8 +325,15 @@ async function webhookMoskitHandler(req, res) {
       for (const v of Object.values(req.headers || {})) {
         for (const parte of String(v).split(/[\s,;]+/)) candidatos.push(parte.replace(/^(Bearer|Token)$/i, ''));
       }
-      const body = req.body && typeof req.body === 'object' ? req.body : {};
-      for (const v of Object.values(body)) if (typeof v === 'string') candidatos.push(v);
+      // procura em todos os campos de texto do corpo (até 3 níveis; o Moskit envia dentro de "metadata")
+      const coletar = (obj, nivel) => {
+        if (!obj || typeof obj !== 'object' || nivel > 3) return;
+        for (const v of Object.values(obj)) {
+          if (typeof v === 'string') candidatos.push(v);
+          else if (v && typeof v === 'object' && !Array.isArray(v)) coletar(v, nivel + 1);
+        }
+      };
+      coletar(req.body, 1);
       valido = candidatos.some(c => igual(c, moskitToken));
     }
     if (!valido) {
@@ -343,6 +352,18 @@ async function webhookMoskitHandler(req, res) {
     const payload = req.body;
     let dealData = null;
 
+    // Formato real do Moskit: { metadata: {...}, before: {...}, after: {...} }
+    if (payload && payload.after && typeof payload.after === 'object' && payload.after.id) {
+      const meta = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+      const textos = Object.values(meta).filter(v => typeof v === 'string').join(' ');
+      const naoNegocio = /(contact|contato|company|empresa|activit|atividade)/i.test(textos) && !/(deal|neg[oó]cio)/i.test(textos);
+      if (naoNegocio) {
+        registrarFormatoWebhook(payload, { acao: 'evento de contato/empresa/atividade: ignorado' });
+        return res.status(200).json({ received: true, ignored: 'Evento não é de negócio' });
+      }
+      payload.deal = { ...payload.after };
+    }
+
     // Moskit webhooks might send the deal directly or nested in "deal" or "data"
     if (payload.deal) {
       dealData = payload.deal;
@@ -353,6 +374,8 @@ async function webhookMoskitHandler(req, res) {
     } else if (payload.id) {
       dealData = { id: payload.id };
     }
+
+    registrarFormatoWebhook(req.body, { acao: 'recebido' });
 
     // Registro do último webhook recebido (só tipo, id, status e ação; sem dados de cliente)
     const registrarWebhook = (acao) => {
