@@ -253,11 +253,40 @@ app.post('/api/webhook/moskit', async (req, res) => {
       dealData = payload.data.deal || payload.data;
     } else if (payload.id && (payload.name || payload.status)) {
       dealData = payload;
+    } else if (payload.id) {
+      dealData = { id: payload.id };
     }
 
+    // Registro do último webhook recebido (só tipo, id, status e ação; sem dados de cliente)
+    const registrarWebhook = (acao) => {
+      try {
+        blingDb.setConfig('ultimo_webhook', JSON.stringify({
+          recebidoEm: new Date().toISOString(),
+          evento: String(payload.event || payload.type || payload.action || payload.eventType || '').slice(0, 60),
+          chaves: Object.keys(payload || {}).slice(0, 15),
+          negocioId: dealData && dealData.id ? dealData.id : null,
+          status: dealData && dealData.status ? String(dealData.status) : null,
+          acao
+        }));
+      } catch (e) { /* nunca derruba o webhook */ }
+    };
+
     if (!dealData) {
+      registrarWebhook('ignorado: sem dados de negócio');
       console.warn('[Webhook] Payload não contém informações identificáveis de negócio');
       return res.status(200).json({ received: true, ignored: 'Sem dados de deal' });
+    }
+
+    // Se o evento não trouxer o status, consulta o negócio no Moskit (somente leitura)
+    let fetchedDeal = null;
+    if (!dealData.status && dealData.id && db.getSetting('moskit_api_key', '')) {
+      try {
+        fetchedDeal = await moskitService.fetchFullDeal(dealData.id);
+        dealData = { ...dealData, status: fetchedDeal.status, name: dealData.name || fetchedDeal.name, price: dealData.price || fetchedDeal.price };
+      } catch (e) {
+        registrarWebhook('ignorado: negócio não encontrado no Moskit');
+        return res.status(200).json({ received: true, ignored: 'Negócio não encontrado no Moskit' });
+      }
     }
 
     // Check status: only process won / Ganhou deals or stage change to won
@@ -268,8 +297,8 @@ app.post('/api/webhook/moskit', async (req, res) => {
     if (isWon) {
       console.log(`[Webhook] Negócio GANHOU detectado! ID: ${dealData.id} - ${dealData.name}`);
       // Fetch full details to ensure products and contacts are complete
-      let fullDeal = dealData;
-      if (db.getSetting('moskit_api_key', '')) {
+      let fullDeal = fetchedDeal || dealData;
+      if (!fetchedDeal && db.getSetting('moskit_api_key', '')) {
         try {
           fullDeal = await moskitService.fetchFullDeal(dealData.id);
         } catch (e) {
@@ -287,9 +316,19 @@ app.post('/api/webhook/moskit', async (req, res) => {
         console.warn('[Webhook] Aviso ao enfileirar para o Bling:', blingErr.message);
       }
 
+      // O Moskit dispara o webhook a cada EDIÇÃO do negócio. Se a O.S. já existe,
+      // ela NÃO é sobrescrita (preserva data, itens e edições feitas à mão).
+      const existente = db.getOrderByMoskitId(fullDeal.id || dealData.id);
+      if (existente) {
+        registrarWebhook(`O.S. ${existente.orcamento_numero} já existe: mantida sem alterações`);
+        return res.status(200).json({ success: true, action: 'mantida', orderId: existente.id });
+      }
+
       const result = await moskitService.importDeal(fullDeal);
+      registrarWebhook(`O.S. ${result.order.orcamento_numero} criada`);
       return res.status(200).json({ success: true, action: result.action, orderId: result.order.id });
     } else {
+      registrarWebhook('ignorado: negócio não está como Ganhou');
       console.log(`[Webhook] Negócio ID ${dealData.id} ignorado pois status é "${dealData.status}" (não é Ganhou)`);
       return res.status(200).json({ received: true, ignored: `Status ${dealData.status} não é Ganhou` });
     }
