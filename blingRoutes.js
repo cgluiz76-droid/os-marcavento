@@ -41,6 +41,7 @@ router.get('/api/bling/status', (req, res) => {
       webhook: {
         ultimo: (() => { try { return JSON.parse(blingDb.getConfig('ultimo_webhook', '') || 'null'); } catch (e) { return null; } })(),
         chegadas: (() => { try { return JSON.parse(blingDb.getConfig('webhook_chegadas', '[]')); } catch (e) { return []; } })(),
+        formatos: (() => { try { return JSON.parse(blingDb.getConfig('webhook_formatos', '[]')); } catch (e) { return []; } })(),
         protegido: Boolean(token),
         url: token ? `${base}/api/webhook/moskit?token=${token}` : `${base}/api/webhook/moskit`
       }
