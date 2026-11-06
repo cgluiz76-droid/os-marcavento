@@ -76,6 +76,28 @@ function formatBr(isoDate) {
   return `${d}/${m}/${y}`;
 }
 
+// UF pelo CEP (faixas dos Correios), usada quando o Moskit não informa a UF
+const CEP_UF = [
+  [1000, 19999, 'SP'], [20000, 28999, 'RJ'], [29000, 29999, 'ES'], [30000, 39999, 'MG'], [40000, 48999, 'BA'],
+  [49000, 49999, 'SE'], [50000, 56999, 'PE'], [57000, 57999, 'AL'], [58000, 58999, 'PB'], [59000, 59999, 'RN'],
+  [60000, 63999, 'CE'], [64000, 64999, 'PI'], [65000, 65999, 'MA'], [66000, 68899, 'PA'], [68900, 68999, 'AP'],
+  [69000, 69299, 'AM'], [69300, 69399, 'RR'], [69400, 69899, 'AM'], [69900, 69999, 'AC'], [70000, 72799, 'DF'],
+  [72800, 72999, 'GO'], [73000, 73699, 'DF'], [73700, 76799, 'GO'], [76800, 76999, 'RO'], [77000, 77999, 'TO'],
+  [78000, 78899, 'MT'], [79000, 79999, 'MS'], [80000, 87999, 'PR'], [88000, 89999, 'SC'], [90000, 99999, 'RS']
+];
+function ufFromCep(cep) {
+  const d = onlyDigits(cep);
+  if (d.length !== 8) return '';
+  const n = parseInt(d.slice(0, 5), 10);
+  const f = CEP_UF.find(([a, b]) => n >= a && n <= b);
+  return f ? f[2] : '';
+}
+function formatCep(cep) {
+  const d = onlyDigits(cep);
+  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : String(cep || '').trim();
+}
+const UFS = new Set(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']);
+
 // ==========================================================
 // OAuth 2.0 (Bling API v3)
 // ==========================================================
@@ -449,7 +471,12 @@ const FIELD_LABELS = {
   'contato.telefone': 'Cliente: Telefone',
   'contato.endereco': 'Cliente: Endereço',
   'contato.municipio': 'Cliente: Município',
-  'contato.uf': 'Cliente: UF',
+  'contato.uf': 'Cliente: UF (se vazio, deduzida pelo CEP)',
+  'contato.numero': 'Cliente: Número',
+  'contato.complemento': 'Cliente: Complemento',
+  'contato.bairro': 'Cliente: Bairro',
+  'contato.cep': 'Cliente: CEP',
+  'contato.ie': 'Cliente: Inscrição Estadual',
   'pedido.data': 'Pedido: Data',
   'pedido.dataPrevista': 'Pedido: Data Prevista (entrega)',
   'pedido.observacoes': 'Pedido: Observações',
@@ -536,22 +563,33 @@ async function buildPreview(dealId) {
     const email = val('contato.email');
     const telefone = val('contato.telefone');
     const endereco = val('contato.endereco');
+    const numero = val('contato.numero');
+    const complemento = val('contato.complemento');
+    const bairro = val('contato.bairro');
+    const cep = val('contato.cep');
     const municipio = val('contato.municipio');
-    const uf = val('contato.uf');
+    const ufInformada = String(val('contato.uf') || '').trim().toUpperCase().slice(0, 2);
+    const uf = UFS.has(ufInformada) ? ufInformada : ufFromCep(cep);
+    const ie = val('contato.ie');
     if (fantasia) p.fantasia = fantasia;
-    if (email) p.email = email;
+    if (email && /@/.test(email)) p.email = email;
     if (telefone) p.telefone = telefone;
-    if (endereco || municipio || uf) {
+    if (ie && onlyDigits(ie)) { p.ie = String(ie).trim(); p.indicadorIe = '1'; }
+    if (endereco || numero || bairro || cep || municipio || uf) {
       p.endereco = { geral: {} };
       if (endereco) p.endereco.geral.endereco = endereco;
+      if (numero) p.endereco.geral.numero = String(numero);
+      if (complemento) p.endereco.geral.complemento = complemento;
+      if (bairro) p.endereco.geral.bairro = bairro;
+      if (cep) p.endereco.geral.cep = formatCep(cep);
       if (municipio) p.endereco.geral.municipio = municipio;
-      if (uf) p.endereco.geral.uf = String(uf).slice(0, 2).toUpperCase();
+      if (uf) p.endereco.geral.uf = uf;
     }
     return p;
   })() : null;
 
   if (contatoInfo.acao === 'criar') {
-    for (const f of ['contato.nome', 'contato.fantasia', 'contato.email', 'contato.telefone', 'contato.endereco', 'contato.municipio', 'contato.uf']) {
+    for (const f of ['contato.nome', 'contato.fantasia', 'contato.email', 'contato.telefone', 'contato.ie', 'contato.endereco', 'contato.numero', 'contato.complemento', 'contato.bairro', 'contato.cep', 'contato.municipio', 'contato.uf']) {
       addLinha('Cliente (cadastro novo)', f, val(f), val(f) || f !== 'contato.nome' ? 'ok' : 'erro');
     }
   } else {
