@@ -640,7 +640,7 @@ const BlingManager = {
     if (pedidoNumTopo) {
       html += `<div class="bling-overwrite-banner">
         <div><strong>Este negócio já gerou o pedido nº ${this.esc(pedidoNumTopo)} no Bling.</strong>
-          <span>Se você conferiu e quer atualizar o Bling com estes dados, use o botão ao lado. O número do pedido e da O.S. não mudam.</span></div>
+          <span>Se você conferiu e quer atualizar o Bling com estes dados (pedido e cadastro do cliente), use o botão ao lado. O número do pedido e da O.S. não mudam.</span></div>
         <button type="button" class="btn btn-success bling-btn-sobrescrever" data-sobrescrever-topo>♻️ Sobrescrever dados no Bling</button>
       </div>`;
     }
@@ -757,7 +757,7 @@ const BlingManager = {
       box.innerHTML = `
         <div class="bling-section-title">Substituir o pedido nº ${this.esc(num)} no Bling</div>
         ${semDif
-          ? '<div class="bling-box info">Os campos principais (cliente, datas, itens, total e observações) estão iguais aos do pedido no Bling. Você ainda pode substituir, por exemplo, para reenviar dados de cadastro ou configuração.</div>'
+          ? '<div class="bling-box info">O pedido (cliente, datas, itens, total e observações) e o cadastro do cliente (endereço, número, bairro, CEP, UF, IE, contatos) estão iguais aos do Bling. Você ainda pode sobrescrever para reenviar os dados.</div>'
           : `<div class="bling-box aviso"><strong class="title">📝 Diferenças entre o pedido como está hoje no Bling e os dados conferidos agora</strong></div>${this.diffTable(r.diff).replace('No Bling (enviado)', 'No Bling hoje')}`}
         ${r.erros.length ? `<div class="bling-box erro"><strong class="title">⛔ Corrija antes de substituir</strong><ul>${r.erros.map(e => `<li>${this.esc(e)}</li>`).join('')}</ul></div>` : ''}
         <div class="bling-confirm-bar">

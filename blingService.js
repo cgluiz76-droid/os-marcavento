@@ -552,7 +552,7 @@ async function buildPreview(dealId) {
     }
   }
 
-  const contatoPayload = contatoInfo.acao === 'criar' ? (() => {
+  const contatoDadosMoskit = docDigits ? (() => {
     const p = {
       nome: nome,
       tipo: docDigits.length === 14 ? 'J' : 'F',
@@ -587,6 +587,7 @@ async function buildPreview(dealId) {
     }
     return p;
   })() : null;
+  const contatoPayload = contatoInfo.acao === 'criar' ? contatoDadosMoskit : null;
 
   if (contatoInfo.acao === 'criar') {
     for (const f of ['contato.nome', 'contato.fantasia', 'contato.email', 'contato.telefone', 'contato.ie', 'contato.endereco', 'contato.numero', 'contato.complemento', 'contato.bairro', 'contato.cep', 'contato.municipio', 'contato.uf']) {
@@ -741,6 +742,7 @@ async function buildPreview(dealId) {
     },
     contato: contatoInfo,
     contatoPayload,
+    contatoDadosMoskit,
     linhas,
     camposMoskit: listAvailableFields(ctx),
     itens,
@@ -1058,6 +1060,21 @@ async function applyPendingChange(dealId, { forcar = false } = {}) {
         }
       }
       payload.contato = { id: contatoId || Number(row.bling_contato_id) };
+
+      // Sobrescrever também o cadastro do cliente com os dados preenchidos no Moskit
+      let contatoAtualizado = false;
+      if (pend.atualizarContato && pend.contatoDadosMoskit && payload.contato.id) {
+        const atualC = await getBlingContato(payload.contato.id);
+        if (atualC) {
+          const corpoC = mergeContato(atualC, pend.contatoDadosMoskit);
+          try {
+            await blingFetch('PUT', `/contatos/${payload.contato.id}`, { body: corpoC });
+            contatoAtualizado = true;
+          } catch (errC) {
+            throw Object.assign(new Error(`Não foi possível atualizar o cadastro do cliente no Bling: ${errC.message}. Nada foi alterado no pedido.`), { response: errC.response });
+          }
+        }
+      }
       const orig = (atual.data && atual.data.observacoesInternas) || '';
       payload.observacoesInternas = `${orig ? orig + '\n' : ''}Atualizado via Automação Moskit-Bling em ${new Date().toISOString()}`;
 
@@ -1066,7 +1083,7 @@ async function applyPendingChange(dealId, { forcar = false } = {}) {
       const res = await blingFetch('PUT', `/pedidos/vendas/${row.bling_pedido_id}`, { body: corpoPut });
       blingDb.markUpdated(id, { contatoId: payload.contato.id, request: payload, response: res });
       blingDb.addHistory({ dealId: id, origem: 'manual', evento: 'atualizacao', resultado: 'sucesso',
-        mensagem: `Pedido nº ${row.bling_pedido_numero} atualizado no Bling com os dados do Moskit (${diff.map(d => d.campo).join(', ')}).`,
+        mensagem: `Pedido nº ${row.bling_pedido_numero} atualizado no Bling com os dados do Moskit (${diff.map(d => d.campo).join(', ')})${contatoAtualizado ? '; cadastro do cliente atualizado' : ''}.`,
         pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero, payload, response: res, diff });
       return { ok: true, pedido: { id: row.bling_pedido_id, numero: row.bling_pedido_numero } };
     } catch (err) {
@@ -1101,6 +1118,81 @@ async function findIntegrationOrder(id, row) {
   return { id: achados[0].id, numero: achados[0].numero, contatoId: achados[0].contato && achados[0].contato.id, recuperar: true };
 }
 
+// ---------- Cliente: comparar e sobrescrever o cadastro no Bling ----------
+const CLIENTE_CAMPOS = [
+  ['nome', 'Cliente: Nome / Razão Social', (c) => c.nome],
+  ['fantasia', 'Cliente: Nome fantasia', (c) => c.fantasia],
+  ['email', 'Cliente: E-mail', (c) => c.email],
+  ['telefone', 'Cliente: Telefone', (c) => c.telefone],
+  ['ie', 'Cliente: Inscrição Estadual', (c) => c.ie],
+  ['endereco', 'Cliente: Endereço', (c) => c.endereco && c.endereco.geral && c.endereco.geral.endereco],
+  ['numero', 'Cliente: Número', (c) => c.endereco && c.endereco.geral && c.endereco.geral.numero],
+  ['complemento', 'Cliente: Complemento', (c) => c.endereco && c.endereco.geral && c.endereco.geral.complemento],
+  ['bairro', 'Cliente: Bairro', (c) => c.endereco && c.endereco.geral && c.endereco.geral.bairro],
+  ['cep', 'Cliente: CEP', (c) => c.endereco && c.endereco.geral && c.endereco.geral.cep],
+  ['municipio', 'Cliente: Município', (c) => c.endereco && c.endereco.geral && c.endereco.geral.municipio],
+  ['uf', 'Cliente: UF', (c) => c.endereco && c.endereco.geral && c.endereco.geral.uf]
+];
+const normCampo = (k, v) => {
+  const s = String(v ?? '').trim();
+  if (k === 'cep' || k === 'ie' || k === 'telefone') return onlyDigits(s);
+  return s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+};
+
+// Só campos preenchidos no Moskit entram (nada do Bling é apagado por campo vazio)
+function diffCliente(blingContato, moskit) {
+  const diff = [];
+  if (!blingContato || !moskit) return diff;
+  for (const [k, rotulo, get] of CLIENTE_CAMPOS) {
+    const novo = get(moskit);
+    if (novo === undefined || novo === null || String(novo).trim() === '') continue;
+    const atual = get(blingContato);
+    if (normCampo(k, atual) !== normCampo(k, novo)) diff.push({ campo: rotulo, antes: String(atual ?? ''), depois: String(novo) });
+  }
+  return diff;
+}
+
+function mergeContato(blingContato, moskit) {
+  const out = JSON.parse(JSON.stringify(blingContato || {}));
+  delete out.id;
+  for (const k of ['nome', 'fantasia', 'email', 'telefone', 'ie', 'indicadorIe']) {
+    if (moskit[k] !== undefined && moskit[k] !== null && String(moskit[k]).trim() !== '') out[k] = moskit[k];
+  }
+  const g = (moskit.endereco && moskit.endereco.geral) || {};
+  out.endereco = out.endereco || {};
+  out.endereco.geral = out.endereco.geral || {};
+  for (const [k, v] of Object.entries(g)) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') out.endereco.geral[k] = v;
+  }
+  if (!out.situacao) out.situacao = 'A';
+  if (!out.tipo) out.tipo = moskit.tipo;
+  return limparVazios(out);
+}
+
+// Remove campos vazios/placeholder do Bling ("", "0000-00-00", {id:0}) para o PUT não ser recusado
+function limparVazios(v) {
+  if (Array.isArray(v)) return v.map(limparVazios).filter(x => x !== undefined);
+  if (v && typeof v === 'object') {
+    const keys = Object.keys(v);
+    if (keys.length === 1 && keys[0] === 'id' && !Number(v.id)) return undefined;
+    const o = {};
+    for (const k of keys) {
+      const x = limparVazios(v[k]);
+      if (x === undefined) continue;
+      if (x && typeof x === 'object' && !Array.isArray(x) && !Object.keys(x).length) continue;
+      o[k] = x;
+    }
+    return o;
+  }
+  if (v === '' || v === '0000-00-00' || v === null) return undefined;
+  return v;
+}
+
+async function getBlingContato(id) {
+  if (!id) return null;
+  try { const r = await blingFetch('GET', `/contatos/${id}`); return r.data || null; } catch (e) { return null; }
+}
+
 // Prepara a substituição do pedido existente pelos dados conferidos agora (somente leitura)
 async function prepareReplace(dealId) {
   const id = Number(dealId);
@@ -1113,13 +1205,17 @@ async function prepareReplace(dealId) {
     const atual = await blingFetch('GET', `/pedidos/vendas/${ped.id}`);
     const pedidoBling = atual.data || {};
     const depois = snapshotFromPayload(preview.payload, contatoRefFromPreview(preview));
-    const diff = diffSnapshots(snapshotFromBlingOrder(pedidoBling), depois);
+    const diffPedido = diffSnapshots(snapshotFromBlingOrder(pedidoBling), depois);
+    const contatoBlingId = (preview.contato && preview.contato.id) || (pedidoBling.contato && pedidoBling.contato.id) || ped.contatoId;
+    const contatoBling = preview.contato && preview.contato.acao === 'criar' ? null : await getBlingContato(contatoBlingId);
+    const diffContato = contatoBling ? diffCliente(contatoBling, preview.contatoDadosMoskit) : [];
+    const diff = [...diffPedido, ...diffContato];
     const sitInicial = Number(blingDb.getConfig('situacao_id', '6')) || 6;
     const sitAtual = pedidoBling.situacao && Number(pedidoBling.situacao.id);
     return {
       ok: true, erros, diff,
       pedido: { id: ped.id, numero: pedidoBling.numero || ped.numero, situacaoInicial: !sitAtual || sitAtual === sitInicial },
-      _interno: { ped, payload: preview.payload, contato: preview.contato, contatoPayload: preview.contatoPayload, signature: JSON.stringify(depois) }
+      _interno: { ped, payload: preview.payload, contato: preview.contato, contatoPayload: preview.contatoPayload, contatoDadosMoskit: preview.contatoDadosMoskit, contatoBlingId, atualizarContato: diffContato.length > 0, signature: JSON.stringify(depois) }
     };
   });
 }
