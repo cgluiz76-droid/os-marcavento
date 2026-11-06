@@ -43,6 +43,7 @@ router.get('/api/bling/status', (req, res) => {
         chegadas: (() => { try { return JSON.parse(blingDb.getConfig('webhook_chegadas', '[]')); } catch (e) { return []; } })(),
         formatos: (() => { try { return JSON.parse(blingDb.getConfig('webhook_formatos', '[]')); } catch (e) { return []; } })(),
         protegido: Boolean(token),
+        tokenMoskitConfigurado: Boolean(blingDb.getConfig('moskit_token_origem', '')),
         url: token ? `${base}/api/webhook/moskit?token=${token}` : `${base}/api/webhook/moskit`
       }
     });
@@ -176,6 +177,16 @@ router.post('/api/bling/alteracao/:dealId/verificar', async (req, res) => {
 });
 
 // ---------- Segurança do webhook do Moskit ----------
+
+// Token que o Moskit envia em cada aviso (copiado da tela de Webhooks do Moskit)
+router.post('/api/bling/moskit-token', (req, res) => {
+  try {
+    const token = String((req.body && req.body.token) || '').trim();
+    if (token && !/^[A-Za-z0-9._-]{8,200}$/.test(token)) return sendError(res, new Error('Token inválido.'), 400);
+    blingDb.setConfig('moskit_token_origem', token);
+    res.json({ success: true, configurado: Boolean(token) });
+  } catch (err) { sendError(res, err); }
+});
 
 router.post('/api/bling/webhook-token', (req, res) => {
   try {
