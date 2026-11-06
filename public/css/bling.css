@@ -195,3 +195,15 @@ details.bling-json pre {
   .bling-confirm-buttons { width: 100%; }
   .bling-confirm-buttons .btn { flex: 1 1 100%; justify-content: center; }
 }
+
+/* Destaque do botão de sobrescrever dados no Bling */
+.bling-overwrite-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin-bottom: 1rem; padding: 0.9rem 1rem; border-radius: var(--radius-md);
+  background: rgba(16, 185, 129, 0.10); border: 2px solid var(--accent-green);
+}
+.bling-overwrite-banner strong { display: block; color: var(--text-primary); margin-bottom: 0.15rem; }
+.bling-overwrite-banner span { color: var(--text-secondary); font-size: 0.88rem; }
+.bling-btn-sobrescrever { font-weight: 700; white-space: nowrap; }
+.bling-table a { color: var(--accent-gold); text-decoration: none; font-weight: 600; }
+.bling-table a:hover { text-decoration: underline; }
