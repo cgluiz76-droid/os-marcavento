@@ -18,7 +18,36 @@ const PORT = process.env.PORT || 3000;
 
 // Enable CORS and JSON parsing
 app.use(cors());
+// Diagnóstico do webhook: registra TODA chamada recebida (só metadados, sem dados de cliente)
+function registrarChegadaWebhook(req, extra = {}) {
+  try {
+    let lista = [];
+    try { lista = JSON.parse(blingDb.getConfig('webhook_chegadas', '[]')) || []; } catch (e) { lista = []; }
+    lista.unshift({
+      em: new Date().toISOString(),
+      metodo: req.method,
+      tipo: String(req.get('content-type') || '').slice(0, 80),
+      tamanho: Number(req.get('content-length') || 0),
+      agente: String(req.get('user-agent') || '').slice(0, 80),
+      ...extra
+    });
+    blingDb.setConfig('webhook_chegadas', JSON.stringify(lista.slice(0, 30)));
+  } catch (e) { /* nunca derruba a requisição */ }
+}
+app.use('/api/webhook/moskit', (req, res, next) => { registrarChegadaWebhook(req); next(); });
+
 app.use(express.json({ limit: '25mb' }));
+// Aceita também corpo em texto (alguns serviços enviam JSON sem o Content-Type correto)
+app.use('/api/webhook/moskit', express.text({ type: () => true, limit: '5mb' }), (req, res, next) => {
+  if (typeof req.body === 'string') {
+    try { req.body = JSON.parse(req.body); }
+    catch (e) {
+      try { req.body = Object.fromEntries(new URLSearchParams(req.body)); } catch (e2) { req.body = {}; }
+    }
+  }
+  if (Array.isArray(req.body)) req.body = req.body[0] || {};
+  next();
+});
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Static files
@@ -667,6 +696,9 @@ app.post('/api/test/simulate-deal', async (req, res) => {
 
 // Upload/validation errors (multer) must reach the frontend as JSON
 app.use((err, req, res, next) => {
+  if (req.originalUrl && req.originalUrl.startsWith('/api/webhook/moskit')) {
+    registrarChegadaWebhook(req, { erro: String(err.message || err).slice(0, 200) });
+  }
   const status = err instanceof multer.MulterError ? 400 : (err.status || 400);
   res.status(status).json({ success: false, error: err.message });
 });
