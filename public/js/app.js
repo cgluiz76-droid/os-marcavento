@@ -303,6 +303,7 @@ const App = {
       let statusBadge = '<span class="status-badge status-won">Ganhou</span>';
       if (order.status === 'production') statusBadge = '<span class="status-badge status-production">Em Produção</span>';
       else if (order.status === 'finished') statusBadge = '<span class="status-badge status-finished">Concluído</span>';
+      else if (order.status === 'aguardando_bling') statusBadge = '<span class="status-badge status-aguardando-bling" title="Pedido ainda não criado no Bling; número provisório">Aguardando Bling</span>';
 
       // Photo indicator
       const photoHtml = order.photo_filename

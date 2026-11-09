@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const moskitService = require('./moskitService');
 const blingDb = require('./blingDb');
 const blingService = require('./blingService');
+const emailService = require('./emailService');
 
 const router = express.Router();
 
@@ -45,6 +46,9 @@ router.get('/api/bling/status', (req, res) => {
         protegido: Boolean(token),
         tokenMoskitConfigurado: Boolean(blingDb.getConfig('moskit_token_origem', '')),
         url: token ? `${base}/api/webhook/moskit?token=${token}` : `${base}/api/webhook/moskit`
+      },
+      email: {
+        senhaConfigurada: Boolean(blingDb.getConfig('smtp_senha', ''))
       }
     });
   } catch (err) { sendError(res, err); }
@@ -127,6 +131,32 @@ router.get('/api/bling/diagnostico', async (req, res) => {
   try {
     res.json({ success: true, permissoes: await blingService.diagnosticarPermissoes() });
   } catch (err) { sendError(res, err); }
+});
+
+// ---------- Alertas por e-mail ----------
+router.post('/api/bling/email-config', (req, res) => {
+  try {
+    const b = req.body || {};
+    if (b.ativo !== undefined) blingDb.setConfig('alerta_email_ativo', b.ativo === true || b.ativo === 'true' ? 'true' : 'false');
+    if (b.host !== undefined) blingDb.setConfig('smtp_host', String(b.host).trim());
+    if (b.porta !== undefined) {
+      const porta = String(b.porta).trim();
+      if (porta && !/^\d{2,5}$/.test(porta)) return sendError(res, new Error('Porta inválida.'), 400);
+      blingDb.setConfig('smtp_porta', porta || '465');
+    }
+    if (b.usuario !== undefined) blingDb.setConfig('smtp_usuario', String(b.usuario).trim());
+    if (b.senha) blingDb.setConfig('smtp_senha', String(b.senha).replace(/\s+/g, '')); // em branco = manter
+    if (b.remetente !== undefined) blingDb.setConfig('email_remetente', String(b.remetente).trim());
+    if (b.destinatarios !== undefined) blingDb.setConfig('email_destinatarios', String(b.destinatarios).trim());
+    res.json({ success: true, config: blingDb.getPublicConfig(), senhaConfigurada: Boolean(blingDb.getConfig('smtp_senha', '')) });
+  } catch (err) { sendError(res, err); }
+});
+
+router.post('/api/bling/email-teste', async (req, res) => {
+  try {
+    const r = await emailService.enviarTeste();
+    res.status(r.ok ? 200 : 400).json({ success: r.ok, ...r });
+  } catch (err) { sendError(res, err, 400); }
 });
 
 // ---------- Histórico de importações ----------
@@ -282,6 +312,18 @@ router.post('/api/bling/enviar/:dealId', async (req, res) => {
       confirmarAvisos: Boolean(req.body && req.body.confirmarAvisos === true),
       origem: 'manual'
     });
+    // Pedido criado pela tela Bling: cria a O.S. junto (mesmo número), se ainda não existir
+    if (result.ok) {
+      try {
+        const r = await blingService.createOsForDeal(Number(req.params.dealId), {
+          preview: result.preview || null,
+          numero: result.pedido && result.pedido.numero ? blingService.formatOsNumber(result.pedido.numero) : null,
+          status: result.pedido && result.pedido.numero ? 'won' : blingService.OS_STATUS_AGUARDANDO,
+          origem: 'manual'
+        });
+        if (r && r.criada) result.osCriada = r.os.orcamento_numero;
+      } catch (e) { result.avisoOs = `Pedido criado, mas a O.S. não pôde ser criada: ${e.message}`; }
+    }
     res.status(result.ok ? 200 : 409).json({ success: result.ok, ...result });
   } catch (err) { sendError(res, err); }
 });

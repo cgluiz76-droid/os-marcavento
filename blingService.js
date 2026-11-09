@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const moskitService = require('./moskitService');
 const blingDb = require('./blingDb');
 const osDb = require('./db');
+const emailService = require('./emailService');
 
 const BLING_API = process.env.BLING_API_URL || 'https://api.bling.com.br/Api/v3';
 const BLING_AUTHORIZE_URL = process.env.BLING_AUTHORIZE_URL || 'https://www.bling.com.br/Api/v3/oauth/authorize';
@@ -899,18 +900,91 @@ function syncOsNumber(dealId, origem = 'automatico') {
     const os = osDb.getOrderByMoskitId(Number(dealId));
     if (!os) return null; // a O.S. ainda não existe: será ajustada quando for criada
     const novo = formatOsNumber(row.bling_pedido_numero);
-    if (!novo || os.orcamento_numero === novo) return null;
+    const aguardando = os.status === OS_STATUS_AGUARDANDO;
+    if (!novo || (os.orcamento_numero === novo && !aguardando)) return null;
     const anterior = os.orcamento_numero;
-    osDb.updateOrder(os.id, { orcamento_numero: novo }, null);
+    osDb.updateOrder(os.id, aguardando ? { orcamento_numero: novo, status: 'won' } : { orcamento_numero: novo }, null);
+    if (anterior === novo) {
+      blingDb.addHistory({ dealId, origem, evento: 'os', resultado: 'info', mensagem: `O.S. ${novo} saiu de "Aguardando Bling": pedido nº ${row.bling_pedido_numero} criado.`, pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero });
+      return { anterior, novo };
+    }
     const repetidas = osDb.db.prepare('SELECT COUNT(*) AS n FROM service_orders WHERE orcamento_numero = ? AND id <> ?').get(novo, os.id).n;
     blingDb.addHistory({ dealId, origem, evento: 'os', resultado: 'info',
-      mensagem: `O.S. renumerada de ${anterior} para ${novo} (mesmo número do pedido no Bling).${repetidas ? ` Atenção: já existe outra O.S. com o número ${novo}.` : ''}`,
+      mensagem: `O.S. renumerada de ${anterior} para ${novo} (mesmo número do pedido no Bling)${aguardando ? ' e saiu de "Aguardando Bling"' : ''}.${repetidas ? ` Atenção: já existe outra O.S. com o número ${novo}.` : ''}`,
       pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero });
     return { anterior, novo };
   } catch (e) {
     blingDb.addHistory({ dealId, origem, evento: 'os', resultado: 'erro', mensagem: `Não foi possível ajustar o número da O.S.: ${e.message}` });
     return null;
   }
+}
+
+// ==========================================================
+// O.S. criada junto com o pedido (mesma estrutura de dados)
+// ==========================================================
+const OS_STATUS_AGUARDANDO = 'aguardando_bling';
+
+// Número provisório: último número de O.S. do sistema + 1 (no formato configurado)
+function nextProvisionalOsNumber() {
+  const rows = osDb.db.prepare('SELECT orcamento_numero FROM service_orders').all();
+  let max = 0;
+  for (const r of rows) {
+    const n = parseInt((String(r.orcamento_numero || '').match(/\d+/) || ['0'])[0], 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return formatOsNumber(max + 1);
+}
+
+// Monta a O.S. com os mesmos dados usados no pedido do Bling (cabeçalho pelo mapeamento
+// da O.S., itens e valores pela conferência). Nunca cria duas O.S. para o mesmo negócio.
+async function buildOsData(id, preview) {
+  const deal = await hydrateParties(await moskitService.fetchFullDeal(id));
+  const { orderData, items } = moskitService.mapDealToServiceOrder(deal);
+  // Mantém o padrão atual do nome da O.S. (nome do negócio)
+  if (deal.name) orderData.nome_fantasia = deal.name;
+  // Valores dos itens iguais aos do pedido (o Moskit envia em centavos)
+  const itensPv = (preview && preview.itens) || [];
+  items.forEach((it, i) => {
+    const pv = itensPv[i];
+    it.preco_unitario = pv ? pv.valor : round2(moskitMoney(it.preco_unitario));
+    if (pv && pv.codigo && !it.sku) it.sku = pv.codigo;
+  });
+  if (preview && preview.payload && preview.payload.dataPrevista && !orderData.data_entrega) {
+    orderData.data_entrega = formatBr(preview.payload.dataPrevista);
+  }
+  orderData.raw_deal_data = deal;
+  return { deal, orderData, items };
+}
+
+async function createOsForDeal(id, { preview = null, numero = null, status = 'won', origem = 'automatico' } = {}) {
+  const existente = osDb.getOrderByMoskitId(Number(id));
+  if (existente) return { os: existente, criada: false };
+  const { orderData, items } = await buildOsData(id, preview);
+  orderData.moskit_deal_id = Number(id);
+  orderData.orcamento_numero = numero || nextProvisionalOsNumber();
+  orderData.status = status;
+  orderData.data_os = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const os = osDb.createOrder(orderData, items);
+  blingDb.addHistory({ dealId: id, origem, evento: 'os', resultado: 'info',
+    mensagem: status === OS_STATUS_AGUARDANDO
+      ? `O.S. ${os.orcamento_numero} criada com status "Aguardando Bling" (número provisório; será trocado pelo número do pedido quando ele for criado no Bling).`
+      : `O.S. ${os.orcamento_numero} criada junto com o pedido (mesmo número do pedido no Bling).` });
+  return { os, criada: true };
+}
+
+// Sobrescreve a O.S. com os dados atuais (mantém número, data, foto, modelo de PDF e status)
+async function overwriteOs(id, preview, origem = 'manual') {
+  const os = osDb.getOrderByMoskitId(Number(id));
+  if (!os) return null;
+  const { orderData, items } = await buildOsData(id, preview);
+  const campos = ['nome_fantasia', 'razao_social', 'cnpj_cpf', 'contato_nome', 'contato_telefone', 'contato_email',
+    'data_entrega', 'forma_pagamento', 'prazo_pagamento', 'frete', 'observacoes'];
+  const dados = {};
+  for (const c of campos) if (orderData[c] !== undefined) dados[c] = orderData[c];
+  osDb.updateOrder(os.id, dados, items);
+  blingDb.addHistory({ dealId: id, origem, evento: 'os', resultado: 'info',
+    mensagem: `O.S. ${os.orcamento_numero} sobrescrita com os dados atuais (itens e cliente); número, data, foto e status mantidos.` });
+  return os;
 }
 
 // ==========================================================
@@ -1082,6 +1156,10 @@ async function applyPendingChange(dealId, { forcar = false } = {}) {
       if (atual.data && atual.data.numero) corpoPut.numero = atual.data.numero; // número do pedido não muda
       const res = await blingFetch('PUT', `/pedidos/vendas/${row.bling_pedido_id}`, { body: corpoPut });
       blingDb.markUpdated(id, { contatoId: payload.contato.id, request: payload, response: res });
+      // A O.S. do negócio também é sobrescrita (itens e cliente), mantendo número, foto e status
+      let osAtualizada = null;
+      try { osAtualizada = await overwriteOs(id, null, 'manual'); }
+      catch (eOs) { blingDb.addHistory({ dealId: id, origem: 'manual', evento: 'os', resultado: 'erro', mensagem: `Pedido atualizado, mas a O.S. não pôde ser sobrescrita: ${eOs.message}` }); }
       blingDb.addHistory({ dealId: id, origem: 'manual', evento: 'atualizacao', resultado: 'sucesso',
         mensagem: `Pedido nº ${row.bling_pedido_numero} atualizado no Bling com os dados do Moskit (${diff.map(d => d.campo).join(', ')})${contatoAtualizado ? '; cadastro do cliente atualizado' : ''}.`,
         pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero, payload, response: res, diff });
@@ -1260,7 +1338,8 @@ function discardPendingChange(dealId) {
 const RETRY_DELAYS_MS = [60 * 1000, 5 * 60 * 1000];
 const retryTimers = new Map();
 function scheduleRetry(id, attempt) {
-  if (attempt > RETRY_DELAYS_MS.length || retryTimers.has(String(id))) return;
+  if (retryTimers.has(String(id))) return true;
+  if (attempt > RETRY_DELAYS_MS.length) return false;
   const delay = RETRY_DELAYS_MS[attempt - 1];
   blingDb.addHistory({ dealId: id, origem: 'automatico', evento: 'envio', resultado: 'info', mensagem: `Nova tentativa automática agendada em ${Math.round(delay / 60000)} min (tentativa ${attempt + 1}).` });
   const t = setTimeout(() => {
@@ -1269,6 +1348,7 @@ function scheduleRetry(id, attempt) {
   }, delay);
   if (t.unref) t.unref();
   retryTimers.set(String(id), t);
+  return true;
 }
 
 // Negócio ganho a partir da data de corte? (sem data de fechamento: considera recente)
@@ -1281,7 +1361,7 @@ function isRecentWin(closeDate) {
 }
 
 // Chamado pelo webhook do Moskit (em segundo plano, depois de responder ao Moskit)
-function processWebhookDeal(dealId, { won = true, status = '', origem = 'webhook', attempt = 1, nome = '', valor = 0, closeDate = null } = {}) {
+function processWebhookDeal(dealId, { won = true, status = '', origem = 'webhook', attempt = 1, nome = '', valor = 0, closeDate = null, criarOS = false } = {}) {
   const id = Number(dealId);
   if (!Number.isInteger(id) || id <= 0) return Promise.resolve();
   return serialize(id, async () => {
@@ -1298,60 +1378,113 @@ function processWebhookDeal(dealId, { won = true, status = '', origem = 'webhook
           mensagem: `Atenção: no Moskit o negócio passou para "${status}" depois que o pedido nº ${row.bling_pedido_numero} foi criado no Bling. O pedido no Bling não foi alterado.`,
           pedidoId: row.bling_pedido_id, pedidoNumero: row.bling_pedido_numero });
       }
+      if (criarOS) await garantirOs(id, origem, null);
       return;
     }
     if (!won) return;
-    if (row && ['ignorado', 'enviando', 'atualizando'].includes(row.status)) return;
+    if (row && ['ignorado', 'enviando', 'atualizando'].includes(row.status)) {
+      if (criarOS) await garantirOs(id, origem, null);
+      return;
+    }
     // Negócio ganho antes da data de corte e ainda fora da fila: não entra automaticamente
     if (!row && origem === 'webhook' && !isRecentWin(closeDate)) return;
 
-    const automatico = blingDb.getConfig('envio_automatico', 'true') === 'true';
-    if (!automatico) {
-      // Modo manual: só coloca na fila para conferência (sem consultar o Bling)
-      if (blingDb.getConfig('auto_enfileirar', 'true') === 'false') return;
+    const r = await tentarEnvioAutomatico(id, { row, origem, attempt, nome, valor });
+
+    // O.S. nasce junto: com o número do pedido (enviado) ou "Aguardando Bling" (provisório)
+    if (criarOS) await garantirOs(id, origem, r.preview);
+
+    if (r.alerta) await alertarFalha(id, r.alerta, r.preview, origem);
+  });
+}
+
+// Garante a O.S. do negócio (nunca duplica)
+async function garantirOs(id, origem, preview) {
+  try {
+    if (osDb.getOrderByMoskitId(id)) return;
+    const row = blingDb.getOrderByDeal(id);
+    if (row && row.bling_pedido_numero && ['enviado', 'alteracao_pendente'].includes(row.status)) {
+      await createOsForDeal(id, { preview, numero: formatOsNumber(row.bling_pedido_numero), status: 'won', origem });
+    } else {
+      await createOsForDeal(id, { preview, status: OS_STATUS_AGUARDANDO, origem });
+    }
+  } catch (e) {
+    blingDb.addHistory({ dealId: id, origem, evento: 'os', resultado: 'erro', mensagem: `Não foi possível criar a O.S.: ${e.message}` });
+    await alertarFalha(id, `Não foi possível criar a O.S.: ${e.message}`, preview, origem);
+  }
+}
+
+// Tenta criar o pedido; devolve { enviado, preview, alerta } (alerta = motivo a enviar por e-mail)
+async function tentarEnvioAutomatico(id, { row, origem, attempt, nome, valor }) {
+  const automatico = blingDb.getConfig('envio_automatico', 'true') === 'true';
+  if (!automatico) {
+    // Modo manual: só coloca na fila para conferência (sem consultar o Bling)
+    if (blingDb.getConfig('auto_enfileirar', 'true') !== 'false') {
       blingDb.enqueue(id, nome, round2(moskitMoney(valor)), 'webhook');
       if (!row) blingDb.addHistory({ dealId: id, origem, evento: 'fila', resultado: 'info', mensagem: 'Negócio Ganho recebido e colocado na fila para conferência manual (envio automático desligado).' });
-      return;
     }
+    return { enviado: false, preview: null, alerta: null };
+  }
 
-    let preview;
-    try {
-      preview = await buildPreview(id);
-    } catch (e) {
-      blingDb.enqueue(id, '', 0, 'webhook');
-      blingDb.setBlocked(id, 'erro', `Não foi possível conferir o negócio: ${e.message}`);
-      blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'erro', mensagem: `Não foi possível conferir o negócio: ${e.message}` });
-      if (isRetryable(e) || /Moskit \((429|5\d\d)\)/.test(e.message)) scheduleRetry(id, attempt);
-      return;
-    }
-    blingDb.enqueue(id, preview.deal.nome, preview.total || preview.deal.valor, 'webhook');
+  let preview;
+  try {
+    preview = await buildPreview(id);
+  } catch (e) {
+    const msg = `Não foi possível conferir o negócio: ${e.message}`;
+    blingDb.enqueue(id, nome, round2(moskitMoney(valor)), 'webhook');
+    blingDb.setBlocked(id, 'erro', msg);
+    blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'erro', mensagem: msg });
+    if ((isRetryable(e) || /\((429|5\d\d)\)/.test(e.message)) && scheduleRetry(id, attempt)) return { enviado: false, preview: null, alerta: null };
+    return { enviado: false, preview: null, alerta: msg };
+  }
+  blingDb.enqueue(id, preview.deal.nome, preview.total || preview.deal.valor, 'webhook');
 
-    const bloqueios = preview.erros.filter(e => !e.startsWith(JA_ENVIADO_PREFIX));
-    if (bloqueios.length) {
-      const msg = `Não enviado automaticamente: ${bloqueios.join(' | ')}`;
-      const atual = blingDb.getOrderByDeal(id);
-      blingDb.setBlocked(id, 'erro', msg);
-      if (!atual || atual.last_error !== msg) blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'bloqueado', mensagem: msg });
-      return;
-    }
-    const duplicidade = preview.avisos.filter(a => a.startsWith('POSSÍVEL DUPLICIDADE'));
-    if (duplicidade.length && !preview.pedidoExistente) {
-      const msg = `Aguardando conferência manual: ${duplicidade.join(' | ')}`;
-      const atual = blingDb.getOrderByDeal(id);
-      blingDb.setBlocked(id, 'pendente', msg);
-      if (!atual || atual.last_error !== msg) blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'bloqueado', mensagem: msg });
-      return;
-    }
+  const bloqueios = preview.erros.filter(e => !e.startsWith(JA_ENVIADO_PREFIX));
+  if (bloqueios.length) {
+    const msg = `Não enviado automaticamente: ${bloqueios.join(' | ')}`;
+    const atual = blingDb.getOrderByDeal(id);
+    blingDb.setBlocked(id, 'erro', msg);
+    if (!atual || atual.last_error !== msg) blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'bloqueado', mensagem: msg });
+    return { enviado: false, preview, alerta: msg };
+  }
+  const duplicidade = preview.avisos.filter(a => a.startsWith('POSSÍVEL DUPLICIDADE'));
+  if (duplicidade.length && !preview.pedidoExistente) {
+    const msg = `Aguardando conferência manual: ${duplicidade.join(' | ')}`;
+    const atual = blingDb.getOrderByDeal(id);
+    blingDb.setBlocked(id, 'pendente', msg);
+    if (!atual || atual.last_error !== msg) blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'bloqueado', mensagem: msg });
+    return { enviado: false, preview, alerta: msg };
+  }
 
-    const result = await sendDeal(id, { confirmarAvisos: true, origem: 'automatico' });
-    if (!result.ok && result.retryable) scheduleRetry(id, attempt);
-    else if (!result.ok && result.codigo !== 'falha_envio') {
-      const detalhe = result.preview && result.preview.erros && result.preview.erros.length ? `: ${result.preview.erros.join(' | ')}` : '';
-      const msg = `Não enviado automaticamente: ${result.mensagem}${detalhe}`;
-      if (result.codigo === 'erros') blingDb.setBlocked(id, 'erro', msg);
-      blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: result.codigo === 'ja_enviado' ? 'info' : 'bloqueado', mensagem: msg });
-    }
-  });
+  const result = await sendDeal(id, { confirmarAvisos: true, origem: 'automatico' });
+  if (result.ok || result.codigo === 'ja_enviado') return { enviado: true, preview };
+  if (result.retryable) {
+    if (scheduleRetry(id, attempt)) return { enviado: false, preview, alerta: null };
+    return { enviado: false, preview, alerta: `Falha de comunicação com o Bling (após ${attempt} tentativas): ${result.mensagem}` };
+  }
+  if (result.codigo === 'falha_envio') return { enviado: false, preview, alerta: `O Bling recusou o pedido: ${result.mensagem}` };
+  const detalhe = result.preview && result.preview.erros && result.preview.erros.length ? `: ${result.preview.erros.join(' | ')}` : '';
+  const msg = `Não enviado automaticamente: ${result.mensagem}${detalhe}`;
+  if (result.codigo === 'erros') blingDb.setBlocked(id, 'erro', msg);
+  blingDb.addHistory({ dealId: id, origem, evento: 'envio', resultado: 'bloqueado', mensagem: msg });
+  return { enviado: false, preview, alerta: msg };
+}
+
+// E-mail de alerta (uma vez por motivo e negócio)
+async function alertarFalha(id, motivo, preview, origem) {
+  try {
+    const assinatura = String(motivo).slice(0, 300);
+    const ja = blingDb.listHistory({ dealId: id, limite: 200 }).some(h => h.evento === 'alerta_email' && h.resultado === 'sucesso' && String(h.mensagem || '').includes(assinatura.slice(0, 120)));
+    if (ja) return;
+    let pv = preview;
+    if (!pv) { try { pv = await buildPreview(id); } catch (e) { pv = null; } }
+    const os = osDb.getOrderByMoskitId(id);
+    const r = await emailService.enviarAlertaFalha({ dealId: id, motivo, preview: pv, os });
+    blingDb.addHistory({ dealId: id, origem, evento: 'alerta_email', resultado: r.ok ? 'sucesso' : (r.naoConfigurado ? 'info' : 'erro'),
+      mensagem: r.ok ? `Alerta enviado por e-mail para ${r.para}. Motivo: ${assinatura}` : `E-mail de alerta não enviado (${r.mensagem}). Motivo: ${assinatura}` });
+  } catch (e) {
+    blingDb.addHistory({ dealId: id, origem, evento: 'alerta_email', resultado: 'erro', mensagem: `Falha ao enviar o alerta por e-mail: ${e.message}` });
+  }
 }
 
 // Testa, só com leituras, se o aplicativo tem permissão para cada recurso usado
@@ -1377,6 +1510,10 @@ async function diagnosticarPermissoes() {
 }
 
 module.exports = {
+  createOsForDeal,
+  overwriteOs,
+  nextProvisionalOsNumber,
+  OS_STATUS_AGUARDANDO,
   prepareReplace: async (id) => { const r = await prepareReplace(id); if (r && r._interno) delete r._interno; return r; },
   replaceOrder,
   syncOsNumber,

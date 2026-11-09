@@ -207,3 +207,6 @@ details.bling-json pre {
 .bling-btn-sobrescrever { font-weight: 700; white-space: nowrap; }
 .bling-table a { color: var(--accent-gold); text-decoration: none; font-weight: 600; }
 .bling-table a:hover { text-decoration: underline; }
+
+/* Status da O.S. enquanto o pedido não é criado no Bling */
+.status-aguardando-bling { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.35); }
