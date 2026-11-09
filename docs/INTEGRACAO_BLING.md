@@ -4,10 +4,12 @@ Sistema OS Marca Vento (https://os-marcavento.fly.dev). Substitui o Pluga.
 
 Quando um negócio é marcado como **Ganho** no Moskit, o sistema:
 
-1. cria a **O.S.**;
-2. cria o **pedido de venda no Bling**, na situação **Em aberto**, cadastrando o cliente se ele ainda não existir;
-3. dá à O.S. o **mesmo número do pedido no Bling** (ex.: pedido nº 5301 → O.S. 5301/26);
+1. cria o **pedido de venda no Bling**, na situação **Em aberto**, cadastrando o cliente se ele ainda não existir;
+2. cria, ao mesmo tempo, a **O.S.** com o **mesmo número do pedido** (ex.: pedido nº 5301 → O.S. 5301/26);
+3. se o Bling falhar, cria a O.S. com status **Aguardando Bling** e número provisório, e **envia um alerta por e-mail**;
 4. registra tudo no **Histórico**.
+
+Somente o negócio **Ganho** no Moskit (ou o envio manual pela tela 📦 Bling) gera pedido no Bling. **O.S. criada manualmente, "🔍 Importar por ID" e "Sincronizar Moskit" geram apenas O.S.**
 
 Tudo é feito pela tela **📦 Bling**, no cabeçalho do sistema.
 
@@ -20,12 +22,15 @@ Moskit (negócio Ganho)
    │  webhook "Integraçao Moski-Bling - Claude" (validado pelo token do Moskit)
    ▼
 Sistema OS Marca Vento
-   ├─ cria a O.S. (somente na 1ª vez; nunca sobrescreve uma O.S. existente)
    ├─ confere o negócio (cliente, SKUs, valores, duplicidade)
-   │     ├─ tudo certo      → cria o pedido no Bling (Em aberto)
-   │     │                      → renumera a O.S. com o nº do pedido
-   │     └─ com pendência   → fica na Fila com o motivo (nada é enviado)
+   │     ├─ tudo certo   → cria o pedido no Bling (Em aberto)
+   │     │                   → cria a O.S. com o nº do pedido (status Ganhou)
+   │     └─ Bling falhou → O.S. "Aguardando Bling" com nº provisório (último + 1)
+   │                         → alerta por e-mail (motivo + todos os dados do Moskit)
+   │                         → negócio fica na Fila com o motivo
+   │                         → ao enviar depois, a O.S. recebe o nº do pedido
    └─ registra cada etapa no Histórico
+   (só cria a O.S. se ainda não existir; nunca duplica nem sobrescreve)
 ```
 
 Depois que o pedido existe, se o negócio for **alterado no Moskit**, o sistema compara os dados com o pedido e coloca a alteração como **pendente da sua autorização**. Ele nunca atualiza o Bling sozinho.
@@ -58,16 +63,19 @@ Mostra cada campo como **ORIGEM (Moskit) → VALOR → DESTINO (Bling)**, os ite
   - no final ficam a tabela de diferenças (**Bling hoje × Moskit agora**) e o mesmo botão.
 
 ### 2.3 Sobrescrever dados no Bling
-Atualiza o **pedido** e o **cadastro do cliente** no Bling com os dados conferidos no Moskit.
+Atualiza o **pedido** e o **cadastro do cliente** no Bling, e também a **O.S.**, com os dados conferidos no Moskit.
 
 - **Pedido:** cliente, data, data prevista, observações, itens, valores e parcela.
 - **Cliente:** nome, nome fantasia, e-mail, telefone, Inscrição Estadual, endereço, número, complemento, bairro, CEP, município e UF.
+- **O.S.:** cliente, contato, data de entrega, pagamento, frete, observações e **itens** são substituídos. Número, data da O.S., status, foto e template são mantidos.
 - **Confirmação:** ao clicar, uma janela mostra as diferenças, e só é gravado depois do **OK**.
 - **Números mantidos:** o número do pedido no Bling e o número da O.S. **não mudam**.
 - **Campos vazios no Moskit não apagam** o que existe no Bling.
 - **Só funciona com o pedido Em aberto.** Se ele já estiver em outra situação (atendido, faturado etc.), o sistema recusa e você ajusta direto no Bling.
 - **Se o Bling recusar o cadastro do cliente,** o pedido também não é alterado.
 - **Os dados anteriores e os novos ficam no Histórico.**
+
+Autorizar uma **Alteração pendente** (item 2.4) também atualiza a O.S. da mesma forma.
 
 ### 2.4 Alteração pendente (detectada automaticamente)
 Quando o Moskit avisa uma edição em um negócio já enviado, o sistema compara itens, total, cliente, datas e observações:
@@ -84,7 +92,8 @@ Registra cada evento com data e hora:
 - falhas de comunicação com o Bling e novas tentativas;
 - bloqueios (com o motivo);
 - alterações, autorizações e descartes;
-- renumeração da O.S.
+- criação e renumeração da O.S.;
+- alertas por e-mail (enviados ou com falha).
 
 Você pode filtrar pelo número do negócio. Em **Detalhes**, aparecem os **dados enviados ao Bling**, a **resposta do Bling** e a tabela de diferenças.
 
@@ -125,6 +134,7 @@ Os campos de Inscrição Estadual e Nome fantasia foram identificados pelo forma
   - **forma de pagamento, vendedor, categoria e loja:** opcionais.
 - **Enviar automaticamente ao Bling:** ligado. Desligado, os negócios Ganho só entram na fila para conferência manual.
 - **Considerar só negócios ganhos a partir de:** **06/11/2026**. Negócios ganhos antes disso, que o Pluga já tratou, são ignorados pelo webhook mesmo se forem editados no Moskit. Ainda é possível enviá-los manualmente pelo número.
+- **✉️ Alerta por e-mail:** avisa quando o Bling não cria o pedido de um negócio Ganho. Veja como configurar no item 4.
 - **Segurança do webhook:**
   - **Token do Moskit:** o webhook só aceita avisos que trazem o token que o Moskit envia, copiado em *Moskit → Marketplace → Webhooks → Copiar token*. **Se você clicar em "Renovar token" no Moskit, cole o novo token aqui**, senão os avisos serão recusados.
   - **Proteção por token na URL:** também ativa. O Moskit não mantém o `?token=` na URL, por isso a validação principal é o token do Moskit.
@@ -140,12 +150,14 @@ Os campos de Inscrição Estadual e Nome fantasia foram identificados pelo forma
 - Se já existir um pedido para o mesmo cliente com o mesmo total nos últimos 10 dias, o envio automático para e o negócio fica **Pendente** para conferência.
 
 **O.S.**
-- A O.S. é criada **só na primeira vez** que o negócio chega como Ganho. Edições posteriores no Moskit **nunca sobrescrevem a O.S.** (data, itens, foto e ajustes manuais ficam preservados).
-- Ao criar o pedido no Bling, a O.S. recebe o número do pedido. Até lá, ela usa um número provisório da sequência do sistema.
+- A O.S. é criada **junto com o pedido** e **só na primeira vez**. Edições no Moskit **não mudam a O.S. sozinhas**: ela só é atualizada quando você usa **♻️ Sobrescrever** ou autoriza uma alteração pendente.
+- Se o Bling falhar, a O.S. nasce **Aguardando Bling** com número provisório (maior número existente + 1). Quando o pedido for criado, ela recebe o número do pedido e passa para **Ganhou**. Use o filtro **Aguardando Bling** na lista de O.S. para encontrá-las.
+- Enviar um negócio manualmente pela tela 📦 Bling também cria a O.S., caso ela ainda não exista.
 - O botão **Sincronizar Moskit** cria O.S. em lote e **sobrescreve O.S. existentes**. Por isso ele exige marcar uma caixa e digitar **SINCRONIZAR**. Para trazer um negócio específico, prefira **🔍 Importar por ID**.
 
 **Falhas de comunicação**
-- Se o Bling estiver fora do ar ou recusar por limite de requisições, o sistema tenta de novo após **1 minuto** e após **5 minutos**. Se ainda falhar, o negócio fica com **Erro** na fila, e basta **Conferir** e enviar depois.
+- Se o Bling estiver fora do ar ou recusar por limite de requisições, o sistema tenta de novo após **1 minuto** e após **5 minutos**. Se ainda falhar, o negócio fica com **Erro** na fila, o **alerta por e-mail** é enviado, e basta **Conferir** e enviar depois.
+- Recusas definitivas (SKU inexistente, cliente sem CPF/CNPJ etc.) geram o alerta na hora. O mesmo motivo não gera e-mail repetido.
 
 **Pedido criado**
 - Situação **Em aberto**, com parcela única no valor total e vencimento conforme a configuração.
@@ -161,6 +173,14 @@ Os campos de Inscrição Estadual e Nome fantasia foram identificados pelo forma
 - **URL:** `https://os-marcavento.fly.dev/api/webhook/moskit` (com ou sem `?token=`);
 - **Ações:** incluir **Criação de negócio** e **Edição de negócio**. Avisos de contato e empresa são ignorados;
 - **Integração:** ativada.
+
+**E-mail de alerta** (*📦 Bling → Configuração → ✉️ Alerta por e-mail*), usando Gmail:
+1. Na conta Google que vai enviar, ative a **verificação em duas etapas**.
+2. Acesse https://myaccount.google.com/apppasswords, crie uma **senha de app** (nome: "OS Marca Vento") e copie os 16 caracteres.
+3. No sistema, preencha: **Servidor** `smtp.gmail.com`, **Porta** `465`, **Usuário** = o e-mail do Gmail, **Senha** = a senha de app, **Destinatários** = quem recebe (separados por vírgula). Marque **Ativo** e clique em **Salvar**.
+4. Clique em **Enviar e-mail de teste** e confira a caixa de entrada (e o spam).
+
+O e-mail traz: o motivo do erro, o número provisório da O.S., os dados do negócio, do cliente, do pedido e dos itens, todos os campos recebidos do Moskit e um anexo JSON com os dados completos. A senha fica guardada no servidor e nunca volta para a tela.
 
 **Bling** (*Central de Extensões → Área do Integrador*, aplicativo "Integracao Moskit"):
 - **Link de redirecionamento:** `https://os-marcavento.fly.dev/api/bling/callback`;
@@ -179,6 +199,8 @@ Os campos de Inscrição Estadual e Nome fantasia foram identificados pelo forma
 | Fila com **Erro**: "sem CPF/CNPJ" | Empresa/contato do Moskit sem documento | Preencher no Moskit e **Conferir** de novo |
 | **Pendente**: "POSSÍVEL DUPLICIDADE" | Já existe pedido parecido no Bling | Conferir no Bling. Se for outro pedido, enviar; se for o mesmo, **Ignorar** |
 | Bling: "pendências cadastrais para NF-e" (número, bairro, CEP, UF) | Cliente cadastrado antes de 06/11/2026 sem endereço completo, ou dados faltando no Moskit | Completar no Moskit e usar **♻️ Sobrescrever dados no Bling** |
+| O.S. com status **Aguardando Bling** | O pedido não foi criado no Bling (motivo no e-mail de alerta e na Fila) | Corrigir a causa e **🔎 Conferir** / enviar. A O.S. é renumerada sozinha |
+| Alerta por e-mail não chega | E-mail não configurado, senha de app errada ou mensagem no spam | Ver o Histórico (evento "alerta e-mail") e usar **Enviar e-mail de teste** |
 | "A conexão com o Bling expirou ou foi revogada" | Aplicativo alterado ou autorização revogada no Bling | **Conectar ao Bling** novamente |
 | "insufficient_scope" | Aplicativo do Bling sem alguma permissão | Marcar o escopo no Bling, reconectar e usar **🩺 Testar permissões** |
 | Sobrescrever recusado: "não está mais na situação inicial" | Pedido já atendido/faturado no Bling | Ajustar diretamente no Bling |
@@ -190,7 +212,8 @@ Os campos de Inscrição Estadual e Nome fantasia foram identificados pelo forma
 **Hospedagem e publicação:** Node.js + Express + SQLite no Fly.io (região GRU), volume persistente `os_data`. Cada push na `main` publica automaticamente pelo GitHub Actions, que tira um **snapshot do volume** antes do deploy.
 
 **Arquivos da integração:**
-- `blingService.js`: OAuth, regras de envio, conferência, alterações e substituição;
+- `blingService.js`: OAuth, regras de envio, conferência, alterações e substituição, criação e atualização da O.S. junto com o pedido;
+- `emailService.js`: envio do alerta por e-mail (SMTP próprio, sem bibliotecas externas);
 - `blingRoutes.js`: rotas `/api/bling/*`;
 - `blingDb.js`: tabelas `bling_*`;
 - `public/js/bling.js` e `public/css/bling.css`: tela.
