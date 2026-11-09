@@ -32,6 +32,8 @@ const BlingManager = {
     document.getElementById('bling-btn-salvar-config')?.addEventListener('click', () => this.saveConfig());
     document.getElementById('bling-btn-carregar-opcoes')?.addEventListener('click', () => this.loadOpcoes());
     document.getElementById('bling-btn-diagnostico')?.addEventListener('click', () => this.diagnostico());
+    document.getElementById('bling-btn-email-salvar')?.addEventListener('click', () => this.saveEmail());
+    document.getElementById('bling-btn-email-teste')?.addEventListener('click', () => this.testeEmail());
     document.getElementById('bling-btn-hist-filtrar')?.addEventListener('click', () => this.loadHistorico());
     document.getElementById('bling-btn-hist-atualizar')?.addEventListener('click', () => this.loadHistorico());
     document.getElementById('bling-hist-deal')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.loadHistorico(); });
@@ -189,6 +191,15 @@ const BlingManager = {
       if (desde) desde.value = c.envio_automatico_desde || '';
 
       this.renderWebhookBox(data.webhook);
+      const setE = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v || ''; };
+      const ea = document.getElementById('bling-email-ativo');
+      if (ea) ea.checked = c.alerta_email_ativo === 'true';
+      setE('bling-email-host', c.smtp_host || 'smtp.gmail.com');
+      setE('bling-email-porta', c.smtp_porta || '465');
+      setE('bling-email-usuario', c.smtp_usuario);
+      setE('bling-email-destinatarios', c.email_destinatarios);
+      const es = document.getElementById('bling-email-senha');
+      if (es) es.placeholder = data.email && data.email.senhaConfigurada ? '•••••••• (salva; em branco = manter)' : 'Cole a senha de app';
     } catch (e) {
       this.toast('Erro ao carregar status do Bling: ' + e.message, 'error');
     }
@@ -280,6 +291,31 @@ const BlingManager = {
     } catch (e) {
       box.innerHTML = `<div class="bling-box erro">${this.esc(e.message)}</div>`;
     }
+  },
+
+  async saveEmail() {
+    try {
+      const v = (id) => (document.getElementById(id)?.value || '').trim();
+      await this.api('/api/bling/email-config', { method: 'POST', body: JSON.stringify({
+        ativo: document.getElementById('bling-email-ativo').checked,
+        host: v('bling-email-host'), porta: v('bling-email-porta'), usuario: v('bling-email-usuario'),
+        senha: v('bling-email-senha'), remetente: v('bling-email-usuario'), destinatarios: v('bling-email-destinatarios')
+      }) });
+      document.getElementById('bling-email-senha').value = '';
+      this.toast('Configuração de e-mail salva. Use "Enviar e-mail de teste" para conferir.', 'success');
+      this.loadStatus();
+    } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  async testeEmail() {
+    const btn = document.getElementById('bling-btn-email-teste');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    try {
+      const r = await fetch('/api/bling/email-teste', { method: 'POST' }).then(x => x.json());
+      if (r.ok) this.toast(`E-mail de teste enviado para ${r.para}.`, 'success');
+      else this.toast(`E-mail não enviado: ${r.mensagem || r.error}`, 'error');
+    } catch (e) { this.toast(e.message, 'error'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = '✉️ Enviar e-mail de teste'; } }
   },
 
   async saveCredenciais() {
@@ -463,7 +499,7 @@ const BlingManager = {
   },
 
   // ---------- Histórico ----------
-  eventoLabel: { envio: 'Envio do pedido', atualizacao: 'Atualização do pedido', alteracao: 'Alteração no Moskit', status_moskit: 'Status no Moskit', fila: 'Fila' },
+  eventoLabel: { alerta_email: 'Alerta por e-mail', os: 'O.S.', envio: 'Envio do pedido', atualizacao: 'Atualização do pedido', alteracao: 'Alteração no Moskit', status_moskit: 'Status no Moskit', fila: 'Fila' },
   resultadoPill: { sucesso: 'ok', erro: 'erro', bloqueado: 'aviso', pendente: 'pendente', info: 'ignorado' },
   resultadoLabel: { sucesso: 'Sucesso', erro: 'Erro', bloqueado: 'Não enviado', pendente: 'Aguardando autorização', info: 'Informação' },
 
@@ -640,7 +676,7 @@ const BlingManager = {
     if (pedidoNumTopo) {
       html += `<div class="bling-overwrite-banner">
         <div><strong>Este negócio já gerou o pedido nº ${this.esc(pedidoNumTopo)} no Bling.</strong>
-          <span>Se você conferiu e quer atualizar o Bling com estes dados (pedido e cadastro do cliente), use o botão ao lado. O número do pedido e da O.S. não mudam.</span></div>
+          <span>Se você conferiu e quer atualizar o Bling com estes dados (pedido e cadastro do cliente) e a O.S. (itens e cliente), use o botão ao lado. O número do pedido e da O.S. não mudam.</span></div>
         <button type="button" class="btn btn-success bling-btn-sobrescrever" data-sobrescrever-topo>♻️ Sobrescrever dados no Bling</button>
       </div>`;
     }
@@ -788,7 +824,7 @@ const BlingManager = {
     const resumo = info && info.diff && info.diff.length
       ? `Diferenças que serão gravadas no Bling:\n${info.diff.map(d => `• ${d.campo}: ${String(d.antes).replace(/\n/g, '; ') || '(vazio)'}  →  ${String(d.depois).replace(/\n/g, '; ') || '(vazio)'}`).join('\n')}`
       : 'Os campos principais estão iguais; os dados serão reenviados ao Bling.';
-    if (!confirm(`CONFIRMAR: sobrescrever os dados do pedido nº ${num} no Bling pelos dados conferidos agora?\n\n${resumo}\n\nO número do pedido e o número da O.S. continuam os mesmos. Os dados anteriores ficam guardados no Histórico.`)) return;
+    if (!confirm(`CONFIRMAR: sobrescrever os dados do pedido nº ${num} no Bling pelos dados conferidos agora?\n\n${resumo}\n\nA O.S. também terá itens e dados do cliente sobrescritos (número, foto e status mantidos).\nO número do pedido e o número da O.S. continuam os mesmos. Os dados anteriores ficam guardados no Histórico.`)) return;
     const btns = document.querySelectorAll('.bling-btn-sobrescrever');
     btns.forEach(b => { b.disabled = true; b.textContent = 'Sobrescrevendo…'; });
     const btn = document.getElementById('bling-btn-substituir');

@@ -438,25 +438,25 @@ async function webhookMoskitHandler(req, res) {
         return res.status(200).json({ received: true, ignored: 'Negócio ganho antes da data de corte' });
       }
 
-      // Integração Bling em segundo plano (envio automático, fila e detecção de alterações).
-      // Isolado: nunca afeta a O.S. nem a resposta ao Moskit.
-      setImmediate(() => {
-        blingService.processWebhookDeal(blingDealId, { won: true, nome: fullDeal.name || dealData.name, valor: fullDeal.price || dealData.price, closeDate: fullDeal.closeDate || dealData.closeDate }).catch(e => console.warn('[Webhook] Bling:', e.message));
-      });
-
       // O Moskit dispara o webhook a cada EDIÇÃO do negócio. Se a O.S. já existe,
       // ela NÃO é sobrescrita (preserva data, itens e edições feitas à mão).
-      const existente = db.getOrderByMoskitId(fullDeal.id || dealData.id);
+      const existente = db.getOrderByMoskitId(blingDealId);
+
+      // Pedido no Bling + O.S. criados juntos, em segundo plano (mesma estrutura de dados).
+      // Sem pedido criado, a O.S. nasce "Aguardando Bling" com número provisório.
+      setImmediate(() => {
+        blingService.processWebhookDeal(blingDealId, {
+          won: true, criarOS: !existente,
+          nome: fullDeal.name || dealData.name, valor: fullDeal.price || dealData.price, closeDate: fullDeal.closeDate || dealData.closeDate
+        }).catch(e => console.warn('[Webhook] Bling:', e.message));
+      });
+
       if (existente) {
         registrarWebhook(`O.S. ${existente.orcamento_numero} já existe: mantida sem alterações`);
         return res.status(200).json({ success: true, action: 'mantida', orderId: existente.id });
       }
-
-      const result = await moskitService.importDeal(fullDeal);
-      // Se o pedido já existe no Bling, a O.S. recebe o mesmo número
-      try { blingService.syncOsNumber(fullDeal.id || dealData.id, 'webhook'); } catch (e) { /* isolado */ }
-      registrarWebhook(`O.S. ${result.order.orcamento_numero} criada`);
-      return res.status(200).json({ success: true, action: result.action, orderId: result.order.id });
+      registrarWebhook('negócio Ganho recebido: criando pedido no Bling e O.S.');
+      return res.status(200).json({ success: true, action: 'processando' });
     } else {
       registrarWebhook('ignorado: negócio não está como Ganhou');
       // Se o pedido já foi criado no Bling, registra no histórico a mudança de status no Moskit

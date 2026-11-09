@@ -6,7 +6,7 @@
   <title>Sistema O.S. Marca Vento | Integração Moskit CRM</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/print.css">
-  <link rel="stylesheet" href="css/bling.css?v=20261106b">
+  <link rel="stylesheet" href="css/bling.css?v=20261109a">
   <script>
     (function () {
       var t = localStorage.getItem('mv-theme') || 'dark';
@@ -128,6 +128,7 @@
         <button class="filter-pill" data-filter="won">Ganhou / Novos</button>
         <button class="filter-pill" data-filter="production">Em Produção</button>
         <button class="filter-pill" data-filter="finished">Concluídos</button>
+        <button class="filter-pill" data-filter="aguardando_bling">Aguardando Bling</button>
       </div>
     </div>
 
@@ -233,6 +234,7 @@
               <select id="order-status">
                 <option value="won">Ganhou / Novo</option>
                 <option value="production">Em Produção</option>
+                <option value="aguardando_bling">Aguardando Bling</option>
                 <option value="finished">Concluído</option>
               </select>
             </div>
@@ -1032,6 +1034,43 @@
             <button type="button" class="btn btn-primary" id="bling-btn-salvar-config">💾 Salvar configuração</button>
           </div>
 
+          <div class="form-section-title">✉️ Alerta por e-mail quando o pedido não for criado no Bling</div>
+          <div class="bling-box info" id="bling-email-status">
+            Quando um negócio Ganho não puder virar pedido no Bling (pendência, recusa ou Bling fora do ar), o sistema envia um e-mail com
+            o motivo e todos os dados recebidos do Moskit. Com Gmail: use <strong>smtp.gmail.com</strong>, porta <strong>465</strong>,
+            seu e-mail como usuário e uma <strong>senha de app</strong> (Conta Google → Segurança → Verificação em duas etapas → Senhas de app).
+          </div>
+          <div class="form-grid">
+            <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 0.75rem;">
+              <input type="checkbox" id="bling-email-ativo" style="width: 20px; height: 20px;">
+              <label for="bling-email-ativo" style="text-transform: none; font-size: 0.92rem; cursor: pointer;"><strong>Enviar alertas por e-mail</strong></label>
+            </div>
+            <div class="form-group">
+              <label for="bling-email-host">Servidor SMTP</label>
+              <input type="text" id="bling-email-host" placeholder="smtp.gmail.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label for="bling-email-porta">Porta</label>
+              <input type="text" id="bling-email-porta" inputmode="numeric" placeholder="465">
+            </div>
+            <div class="form-group">
+              <label for="bling-email-usuario">Usuário (e-mail que envia)</label>
+              <input type="text" id="bling-email-usuario" autocomplete="off" placeholder="seuemail@gmail.com">
+            </div>
+            <div class="form-group">
+              <label for="bling-email-senha">Senha de app</label>
+              <input type="password" id="bling-email-senha" autocomplete="new-password" placeholder="Cole a senha de app">
+            </div>
+            <div class="form-group full-width">
+              <label for="bling-email-destinatarios">Enviar alertas para (separe vários por vírgula)</label>
+              <input type="text" id="bling-email-destinatarios" autocomplete="off" placeholder="voce@empresa.com.br, outra@empresa.com.br">
+            </div>
+          </div>
+          <div class="bling-actions-right">
+            <button type="button" class="btn btn-secondary" id="bling-btn-email-teste">✉️ Enviar e-mail de teste</button>
+            <button type="button" class="btn btn-primary" id="bling-btn-email-salvar">💾 Salvar e-mail</button>
+          </div>
+
           <div class="form-section-title">🛡️ Segurança do Webhook do Moskit</div>
           <div class="bling-webhook-box" id="bling-webhook-box"></div>
         </section>
@@ -1047,6 +1086,6 @@
   <script src="js/skuManager.js"></script>
   <script src="js/print.js"></script>
   <script src="js/app.js"></script>
-  <script src="js/bling.js?v=20261106b"></script>
+  <script src="js/bling.js?v=20261109a"></script>
 </body>
 </html>
