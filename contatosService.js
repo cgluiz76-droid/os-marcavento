@@ -271,6 +271,8 @@ function lerResultado() {
 function iniciarDiagnostico() {
   if (estado.rodando) return { iniciado: false, motivo: 'Já existe uma verificação em andamento.' };
   Object.assign(estado, { rodando: true, etapa: 'Lendo clientes do Bling…', inicio: new Date().toISOString(), erro: null });
+  const keepAlive = require('./keepAlive');
+  keepAlive.iniciar();
   (async () => {
     try {
       const { contatos: bling, filtradoPorTipo } = await blingClientes(n => { estado.etapa = `Lendo clientes do Bling… ${n}`; });
@@ -291,6 +293,7 @@ function iniciarDiagnostico() {
     } finally {
       estado.rodando = false;
       estado.etapa = '';
+      keepAlive.parar();
     }
   })();
   return { iniciado: true };

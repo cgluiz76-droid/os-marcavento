@@ -1370,9 +1370,13 @@ function scheduleRetry(id, attempt) {
   if (attempt > RETRY_DELAYS_MS.length) return false;
   const delay = RETRY_DELAYS_MS[attempt - 1];
   blingDb.addHistory({ dealId: id, origem: 'automatico', evento: 'envio', resultado: 'info', mensagem: `Nova tentativa automática agendada em ${Math.round(delay / 60000)} min (tentativa ${attempt + 1}).` });
+  // Mantém o servidor ligado até a nova tentativa acontecer (senão o Fly desliga a máquina e ela se perde)
+  const keepAlive = require('./keepAlive');
+  keepAlive.iniciar();
   const t = setTimeout(() => {
     retryTimers.delete(String(id));
-    processWebhookDeal(id, { won: true, origem: 'automatico', attempt: attempt + 1 }).catch(() => {});
+    Promise.resolve().then(() => processWebhookDeal(id, { won: true, origem: 'automatico', attempt: attempt + 1 }))
+      .catch(() => {}).finally(() => keepAlive.parar());
   }, delay);
   if (t.unref) t.unref();
   retryTimers.set(String(id), t);

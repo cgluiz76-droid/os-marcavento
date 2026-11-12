@@ -21,11 +21,13 @@ const path = require('path');
 const db = require('./db');
 const blingService = require('./blingService');
 const cs = require('./contatosService');
+const keepAlive = require('./keepAlive');
 
 const MOSKIT = 'https://api.moskitcrm.com/v2';
 const DIR = path.join(__dirname, 'data');
 const ARQ_PLANO = path.join(DIR, 'contatos_sync_plano.json');
 const ARQ_BACKUP = path.join(DIR, 'contatos_sync_backup.jsonl');
+const ARQ_PROGRESSO = path.join(DIR, 'contatos_sync_progresso.json');
 
 const CF = {
   empresa: {
@@ -268,14 +270,39 @@ async function preparar() {
   const empresas = await cs.moskitTodos('companies', n => { estado.etapa = `Lendo empresas do Moskit… ${n}`; });
   const diag = cs.comparar(bling, contatos, empresas, { excluidos });
   const ufs = await opcoesUf();
+  const cadastroMoskit = new Map();
+  for (const c of contatos) cadastroMoskit.set(`contato:${c.id}`, c);
+  for (const c of empresas) cadastroMoskit.set(`empresa:${c.id}`, c);
 
-  const itens = [];
+  // Retoma uma prévia interrompida (ex.: servidor reiniciado) a partir de onde parou
+  let itens = [];
+  const feitos = new Set();
+  let progIniciado = new Date().toISOString();
+  try {
+    const prog = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8'));
+    if (prog && Date.now() - Date.parse(prog.iniciadoEm) < 24 * 3600 * 1000) {
+      itens = prog.itens || [];
+      (prog.feitos || []).forEach(x => feitos.add(String(x)));
+      progIniciado = prog.iniciadoEm;
+    }
+  } catch (e) { /* sem progresso salvo */ }
+  const salvarProgresso = () => {
+    fs.mkdirSync(DIR, { recursive: true });
+    const tmp = ARQ_PROGRESSO + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ iniciadoEm: progIniciado, feitos: [...feitos], itens }));
+    fs.renameSync(tmp, ARQ_PROGRESSO);
+  };
+
   const candidatos = diag.itens.filter(i => i.status !== 'sem_documento');
+  const retomados = candidatos.filter(i => feitos.has(String(i.blingId))).length;
   let n = 0;
   for (const it of candidatos) {
-    if (estado.parar) throw new Error('Preparação interrompida.');
+    if (estado.parar) { salvarProgresso(); throw new Error('Preparação interrompida.'); }
     n++;
-    estado.etapa = `Conferindo cadastro ${n} de ${candidatos.length}…`;
+    if (feitos.has(String(it.blingId))) continue;
+    if (n % 25 === 0) salvarProgresso();
+    estado.etapa = `Conferindo cadastro ${n} de ${candidatos.length}…${retomados ? ` (retomada: ${retomados} já conferidos antes)` : ''}`;
+    feitos.add(String(it.blingId));
     const docD = dig(it.doc);
     const base = { blingId: it.blingId, nome: it.nome, doc: it.doc, status: 'pendente', erro: '' };
     if (excluidos.includes(docD)) {
@@ -311,9 +338,13 @@ async function preparar() {
       continue;
     }
 
-    let ent;
-    try { ent = await moskit('GET', `/${alvo.tipo === 'empresa' ? 'companies' : 'contacts'}/${alvo.id}`); }
-    catch (e) { itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, status: 'erro', erro: e.message, mudancas: [] }); continue; }
+    // A listagem do Moskit já traz telefones, e-mails e campos personalizados.
+    // Na gravação o cadastro é lido de novo, completo, antes de alterar.
+    let ent = cadastroMoskit.get(`${alvo.tipo}:${alvo.id}`);
+    if (!ent) {
+      try { ent = await moskit('GET', `/${alvo.tipo === 'empresa' ? 'companies' : 'contacts'}/${alvo.id}`); }
+      catch (e) { itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, status: 'erro', erro: e.message, mudancas: [] }); continue; }
+    }
     const des = desejadoDoBling(b, alvo.tipo);
     const { mudancas } = montarAtualizacao(ent, alvo.tipo, des, ufs);
     if (!mudancas.length) continue;
@@ -331,6 +362,7 @@ async function preparar() {
 
   const plano = { geradoEm: new Date().toISOString(), resumo: resumoPlano(itens), itens };
   salvarPlano(plano);
+  try { fs.unlinkSync(ARQ_PROGRESSO); } catch (e) {}
   return plano;
 }
 
@@ -441,9 +473,10 @@ function executar(tarefa, fn) {
   if (estado.rodando) return { iniciado: false, motivo: 'Já existe uma tarefa em andamento.' };
   Object.assign(estado, { rodando: true, tarefa, etapa: '', inicio: new Date().toISOString(), erro: null, parar: false });
   (async () => {
+    keepAlive.iniciar();
     try { await fn(); }
     catch (e) { estado.erro = e.message; }
-    finally { estado.rodando = false; estado.etapa = ''; }
+    finally { estado.rodando = false; estado.etapa = ''; keepAlive.parar(); }
   })();
   return { iniciado: true };
 }
@@ -452,6 +485,10 @@ module.exports = {
   iniciarPreparo: () => executar('preparar', preparar),
   iniciarAplicacao: (ids) => executar('aplicar', () => aplicar(ids)),
   parar: () => { if (estado.rodando) estado.parar = true; return { ok: true }; },
-  status: () => ({ ...estado, plano: lerPlano() }),
+  status: () => {
+    let progresso = null;
+    try { const p = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8')); progresso = { iniciadoEm: p.iniciadoEm, conferidos: (p.feitos || []).length }; } catch (e) {}
+    return { ...estado, plano: lerPlano(), progresso };
+  },
   _internals: { montarAtualizacao, desejadoDoBling, corpoPut, CF }
 };
