@@ -86,6 +86,13 @@ const CEP_UF = [
   [72800, 72999, 'GO'], [73000, 73699, 'DF'], [73700, 76799, 'GO'], [76800, 76999, 'RO'], [77000, 77999, 'TO'],
   [78000, 78899, 'MT'], [79000, 79999, 'MS'], [80000, 87999, 'PR'], [88000, 89999, 'SC'], [90000, 99999, 'RS']
 ];
+function limparMunicipio(v) {
+  let m = String(v ?? '').trim();
+  m = m.replace(/,?\s*Brasil\s*$/i, '').trim();
+  m = m.replace(/\s*[,\-\/]\s*[A-Za-z]{2}\s*$/, '').trim();
+  return m;
+}
+
 function ufFromCep(cep) {
   const d = onlyDigits(cep);
   if (d.length !== 8) return '';
@@ -595,7 +602,8 @@ async function buildPreview(dealId) {
     const complemento = val('contato.complemento');
     const bairro = val('contato.bairro');
     const cep = val('contato.cep');
-    const municipio = val('contato.municipio');
+    // O campo de endereço do Moskit (preenchimento do Google) traz "Cidade, UF, Brasil"; o Bling/NF-e quer só a cidade
+    const municipio = limparMunicipio(val('contato.municipio'));
     // Só aceita a sigla exata (ex.: "ESCOLHA" não pode virar "ES"); senão deduz pelo CEP
     const ufInformada = String(val('contato.uf') || '').replace(/[^A-Za-z]/g, '').toUpperCase();
     const uf = UFS.has(ufInformada) ? ufInformada : ufFromCep(cep);
@@ -1572,5 +1580,5 @@ module.exports = {
   blingFetch,
   _limparVazios: limparVazios,
   // Exportado para testes
-  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext, traduzirOpcoes, opcoesCache }
+  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext, traduzirOpcoes, opcoesCache, limparMunicipio }
 };
