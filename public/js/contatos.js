@@ -90,7 +90,7 @@ const ContatosManager = {
     const el = document.getElementById('contatos-status');
     const btn = document.getElementById('contatos-btn-verificar');
     btn.disabled = !!r.rodando;
-    if (r.rodando) el.textContent = '⏳ ' + (r.etapa || 'Verificando…') + ' (leva cerca de 1 minuto)';
+    if (r.rodando) el.textContent = '⏳ ' + (r.etapa || 'Verificando…') + ' (cerca de 1 minuto)';
     else if (r.erro) el.textContent = '⚠️ A última verificação falhou: ' + r.erro;
     else if (r.resultado) el.textContent = 'Última verificação: ' + this.dataHora(r.resultado.geradoEm);
     else el.textContent = 'Nenhuma verificação feita ainda. Clique em "Verificar agora".';
@@ -307,7 +307,8 @@ Object.assign(ContatosManager, {
     document.getElementById('contatos-sync-preparar').disabled = !!st.rodando;
     document.getElementById('contatos-sync-parar').style.display = st.rodando ? '' : 'none';
     ['contatos-sync-teste', 'contatos-sync-gravar'].forEach(id => { document.getElementById(id).disabled = !!st.rodando; });
-    if (st.rodando) elSt.textContent = '⏳ ' + (st.etapa || 'Trabalhando…') + (st.tarefa === 'preparar' ? ' (a prévia confere cadastro por cadastro e pode levar de 20 a 40 minutos; pode fechar a janela)' : '');
+    if (st.rodando) elSt.textContent = '⏳ ' + (st.etapa || 'Trabalhando…') + (st.tarefa === 'preparar' ? ' (confere cadastro por cadastro: cerca de 20 minutos; pode fechar a janela)' : ' (pode fechar a janela)');
+    else if (st.progresso) elSt.textContent = `⚠️ Há uma prévia interrompida (${st.progresso.conferidos} cadastros já conferidos). Clique em "Preparar prévia" para continuar de onde parou.`;
     else if (st.erro) elSt.textContent = '⚠️ ' + st.erro;
     else if (p) elSt.textContent = 'Prévia de ' + this.dataHora(p.geradoEm) + '.';
     else elSt.textContent = 'Nenhuma prévia preparada ainda.';

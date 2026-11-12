@@ -406,6 +406,31 @@ function buildContext(deal) {
   };
 }
 
+// Campos de escolha do Moskit (ex.: UF) guardam o NÚMERO da opção (ex.: 783572), não o texto ("SP").
+// Cada campo tem seus próprios números (o "SP" da empresa é diferente do "SP" do contato),
+// então a tradução é feita campo a campo, consultando as opções no Moskit (somente leitura, com cache).
+const opcoesCache = new Map();
+async function opcoesDoCampo(cfId) {
+  const c = opcoesCache.get(cfId);
+  if (c && Date.now() - c.em < 60 * 60 * 1000) return c.mapa;
+  const lista = await moskitService.moskitFetch(`/customFields/${cfId}/options?quantity=100`);
+  const mapa = new Map((Array.isArray(lista) ? lista : []).map(o => [Number(o.id), String(o.label || '').replace(/"/g, '').trim()]));
+  opcoesCache.set(cfId, { em: Date.now(), mapa });
+  return mapa;
+}
+async function traduzirOpcoes(ent) {
+  if (!ent || !Array.isArray(ent.entityCustomFields)) return;
+  for (const cf of ent.entityCustomFields) {
+    if (!cf || !cf.id || !Array.isArray(cf.options) || !cf.options.length) continue;
+    if (cf.textValue !== undefined && cf.textValue !== null && cf.textValue !== '') continue;
+    try {
+      const mapa = await opcoesDoCampo(cf.id);
+      const rotulos = cf.options.map(id => mapa.get(Number(id))).filter(Boolean);
+      if (rotulos.length) cf.textValue = rotulos.join(', ');
+    } catch (e) { /* sem tradução: a UF continua sendo deduzida pelo CEP */ }
+  }
+}
+
 // A API v2 do Moskit devolve empresa/contato como lista resumida (só o id preenchido).
 // Busca os cadastros completos para ler CNPJ/CPF, telefone etc. (somente leitura).
 async function hydrateParties(deal) {
@@ -418,6 +443,8 @@ async function hydrateParties(deal) {
   if (cont && !cont.cpf && !cont.name) {
     try { deal.contact = { ...cont, ...(await moskitService.moskitFetch(`/contacts/${cont.id}`)) }; } catch (e) { /* segue sem */ }
   } else if (cont) deal.contact = cont;
+  await traduzirOpcoes(deal.company);
+  await traduzirOpcoes(deal.contact);
 
   // Produtos sem SKU no retorno do negócio: busca o cadastro do produto (sem sobrescrever com vazio)
   const prods = Array.isArray(deal.dealProducts) ? deal.dealProducts : [];
@@ -569,7 +596,8 @@ async function buildPreview(dealId) {
     const bairro = val('contato.bairro');
     const cep = val('contato.cep');
     const municipio = val('contato.municipio');
-    const ufInformada = String(val('contato.uf') || '').trim().toUpperCase().slice(0, 2);
+    // Só aceita a sigla exata (ex.: "ESCOLHA" não pode virar "ES"); senão deduz pelo CEP
+    const ufInformada = String(val('contato.uf') || '').replace(/[^A-Za-z]/g, '').toUpperCase();
     const uf = UFS.has(ufInformada) ? ufInformada : ufFromCep(cep);
     const ie = val('contato.ie');
     if (fantasia) p.fantasia = fantasia;
@@ -1342,9 +1370,13 @@ function scheduleRetry(id, attempt) {
   if (attempt > RETRY_DELAYS_MS.length) return false;
   const delay = RETRY_DELAYS_MS[attempt - 1];
   blingDb.addHistory({ dealId: id, origem: 'automatico', evento: 'envio', resultado: 'info', mensagem: `Nova tentativa automática agendada em ${Math.round(delay / 60000)} min (tentativa ${attempt + 1}).` });
+  // Mantém o servidor ligado até a nova tentativa acontecer (senão o Fly desliga a máquina e ela se perde)
+  const keepAlive = require('./keepAlive');
+  keepAlive.iniciar();
   const t = setTimeout(() => {
     retryTimers.delete(String(id));
-    processWebhookDeal(id, { won: true, origem: 'automatico', attempt: attempt + 1 }).catch(() => {});
+    Promise.resolve().then(() => processWebhookDeal(id, { won: true, origem: 'automatico', attempt: attempt + 1 }))
+      .catch(() => {}).finally(() => keepAlive.parar());
   }, delay);
   if (t.unref) t.unref();
   retryTimers.set(String(id), t);
@@ -1540,5 +1572,5 @@ module.exports = {
   blingFetch,
   _limparVazios: limparVazios,
   // Exportado para testes
-  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext }
+  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext, traduzirOpcoes, opcoesCache }
 };

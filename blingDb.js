@@ -77,13 +77,13 @@ function initBlingTables() {
     { bling_field: 'contato.fantasia', moskit_source: 'company.name', fallback_value: '' },
     { bling_field: 'contato.email', moskit_source: 'contact.emails[0].address || company.email', fallback_value: '' },
     { bling_field: 'contato.telefone', moskit_source: 'contact.phones[0].number || company.phone', fallback_value: '' },
-    { bling_field: 'contato.endereco', moskit_source: 'company.address', fallback_value: '' },
-    { bling_field: 'contato.municipio', moskit_source: 'company.city', fallback_value: '' },
-    { bling_field: 'contato.uf', moskit_source: 'company.state', fallback_value: '' },
-    { bling_field: 'contato.numero', moskit_source: 'company.number', fallback_value: '' },
-    { bling_field: 'contato.complemento', moskit_source: '', fallback_value: '' },
-    { bling_field: 'contato.bairro', moskit_source: 'company.neighborhood', fallback_value: '' },
-    { bling_field: 'contato.cep', moskit_source: 'company.zipCode', fallback_value: '' },
+    { bling_field: 'contato.endereco', moskit_source: 'company.customFields.CF_dVKmQlU1C6vlAMWR || company.address || contact.customFields.CF_POEMyESeC56RZMdk', fallback_value: '' },
+    { bling_field: 'contato.municipio', moskit_source: 'company.customFields.CF_2ojMxGUPCoWlaqOE || company.city || contact.customFields.CF_8P5q4aS2C4ObBMRJ', fallback_value: '' },
+    { bling_field: 'contato.uf', moskit_source: 'company.customFields.CF_dVKmQlUbi6voQMWR || contact.customFields.CF_dVKmQASbi6voVmWR || company.state', fallback_value: '' },
+    { bling_field: 'contato.numero', moskit_source: 'company.customFields.CF_Rg7MnpULCdaxjDvd || contact.customFields.CF_3LvDvKS4CLBQpq6a', fallback_value: '' },
+    { bling_field: 'contato.complemento', moskit_source: 'company.customFields.CF_6rRmw4UvCJbllD4X || contact.customFields.CF_wGrqzySVCpj2ODLo', fallback_value: '' },
+    { bling_field: 'contato.bairro', moskit_source: 'company.customFields.CF_VRAqd4UdCa5L3qbL || contact.customFields.CF_E79MrESoCejPjqZJ', fallback_value: '' },
+    { bling_field: 'contato.cep', moskit_source: 'company.customFields.CF_Lo1qjxU1C4wgJmer || contact.customFields.CF_QJXmAjSjCydERD25', fallback_value: '' },
     { bling_field: 'contato.ie', moskit_source: '', fallback_value: '' },
     { bling_field: 'pedido.data', moskit_source: 'deal.closeDate', fallback_value: '' },
     { bling_field: 'pedido.dataPrevista', moskit_source: 'customFields.data_entrega', fallback_value: '' },
@@ -95,6 +95,19 @@ function initBlingTables() {
   ];
   const mCheck = db.prepare('SELECT bling_field FROM bling_field_mappings WHERE bling_field = ?');
   const mIns = db.prepare('INSERT INTO bling_field_mappings (bling_field, moskit_source, fallback_value) VALUES (?, ?, ?)');
+  // 12/11/2026: UF (campo de escolha do Moskit, traduzido para a sigla) e endereço do contato como alternativa.
+  // Só atualiza linhas ainda no valor configurado antes; personalizações diferentes são mantidas.
+  const ajustes = [
+    ['contato.uf', ['company.state'], 'company.customFields.CF_dVKmQlUbi6voQMWR || contact.customFields.CF_dVKmQASbi6voVmWR || company.state'],
+    ['contato.endereco', ['company.customFields.CF_dVKmQlU1C6vlAMWR || company.address', 'company.address'], 'company.customFields.CF_dVKmQlU1C6vlAMWR || company.address || contact.customFields.CF_POEMyESeC56RZMdk'],
+    ['contato.numero', ['company.customFields.CF_Rg7MnpULCdaxjDvd', 'company.number'], 'company.customFields.CF_Rg7MnpULCdaxjDvd || contact.customFields.CF_3LvDvKS4CLBQpq6a'],
+    ['contato.complemento', ['company.customFields.CF_6rRmw4UvCJbllD4X', ''], 'company.customFields.CF_6rRmw4UvCJbllD4X || contact.customFields.CF_wGrqzySVCpj2ODLo'],
+    ['contato.bairro', ['company.customFields.CF_VRAqd4UdCa5L3qbL', 'company.neighborhood'], 'company.customFields.CF_VRAqd4UdCa5L3qbL || contact.customFields.CF_E79MrESoCejPjqZJ'],
+    ['contato.cep', ['company.customFields.CF_Lo1qjxU1C4wgJmer', 'company.zipCode'], 'company.customFields.CF_Lo1qjxU1C4wgJmer || contact.customFields.CF_QJXmAjSjCydERD25'],
+    ['contato.municipio', ['company.customFields.CF_2ojMxGUPCoWlaqOE || company.city', 'company.city'], 'company.customFields.CF_2ojMxGUPCoWlaqOE || company.city || contact.customFields.CF_8P5q4aS2C4ObBMRJ']
+  ];
+  const mUpd = db.prepare('UPDATE bling_field_mappings SET moskit_source = ? WHERE bling_field = ? AND moskit_source = ?');
+  for (const [campo, antigos, novo] of ajustes) for (const antigo of antigos) mUpd.run(novo, campo, antigo);
   for (const m of defaultMappings) {
     if (!mCheck.get(m.bling_field)) mIns.run(m.bling_field, m.moskit_source, m.fallback_value);
   }
