@@ -28,6 +28,8 @@ const DIR = path.join(__dirname, 'data');
 const ARQ_PLANO = path.join(DIR, 'contatos_sync_plano.json');
 const ARQ_BACKUP = path.join(DIR, 'contatos_sync_backup.jsonl');
 const ARQ_PROGRESSO = path.join(DIR, 'contatos_sync_progresso.json');
+// Aumentar quando mudar a regra de comparação: progresso de prévia antiga é descartado
+const VERSAO_REGRAS = 2;
 
 const CF = {
   empresa: {
@@ -194,7 +196,10 @@ function montarAtualizacao(entOriginal, tipo, desejado, ufs) {
     const id = CF[tipo][chave];
     if (!id || vazio(valor)) return;
     const atual = cfValor({ entityCustomFields: cfs }, id).texto;
-    const igual = chave === 'cep' ? dig(atual) === dig(valor) : norm(atual) === norm(valor);
+    const lm = blingService._internals.limparMunicipio;
+    const igual = chave === 'cep' ? dig(atual) === dig(valor)
+      : chave === 'municipio' ? norm(lm(atual)) === norm(lm(valor)) // "Cidade, SP, Brasil" = "Cidade"
+      : norm(atual) === norm(valor);
     if (igual) return;
     mudancas.push({ campo: ROTULO[chave], antes: atual, depois: String(valor) });
     const c = cfs.find(x => x.id === id);
@@ -280,7 +285,7 @@ async function preparar() {
   let progIniciado = new Date().toISOString();
   try {
     const prog = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8'));
-    if (prog && Date.now() - Date.parse(prog.iniciadoEm) < 24 * 3600 * 1000) {
+    if (prog && prog.versao === VERSAO_REGRAS && Date.now() - Date.parse(prog.iniciadoEm) < 24 * 3600 * 1000) {
       itens = prog.itens || [];
       (prog.feitos || []).forEach(x => feitos.add(String(x)));
       progIniciado = prog.iniciadoEm;
@@ -289,7 +294,7 @@ async function preparar() {
   const salvarProgresso = () => {
     fs.mkdirSync(DIR, { recursive: true });
     const tmp = ARQ_PROGRESSO + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ iniciadoEm: progIniciado, feitos: [...feitos], itens }));
+    fs.writeFileSync(tmp, JSON.stringify({ versao: VERSAO_REGRAS, iniciadoEm: progIniciado, feitos: [...feitos], itens }));
     fs.renameSync(tmp, ARQ_PROGRESSO);
   };
 
@@ -487,7 +492,7 @@ module.exports = {
   parar: () => { if (estado.rodando) estado.parar = true; return { ok: true }; },
   status: () => {
     let progresso = null;
-    try { const p = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8')); progresso = { iniciadoEm: p.iniciadoEm, conferidos: (p.feitos || []).length }; } catch (e) {}
+    try { const p = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8')); if (p.versao === VERSAO_REGRAS) progresso = { iniciadoEm: p.iniciadoEm, conferidos: (p.feitos || []).length }; } catch (e) {}
     return { ...estado, plano: lerPlano(), progresso };
   },
   _internals: { montarAtualizacao, desejadoDoBling, corpoPut, CF }
