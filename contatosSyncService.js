@@ -29,7 +29,7 @@ const ARQ_PLANO = path.join(DIR, 'contatos_sync_plano.json');
 const ARQ_BACKUP = path.join(DIR, 'contatos_sync_backup.jsonl');
 const ARQ_PROGRESSO = path.join(DIR, 'contatos_sync_progresso.json');
 // Aumentar quando mudar a regra de comparação: progresso de prévia antiga é descartado
-const VERSAO_REGRAS = 3;
+const VERSAO_REGRAS = 4;
 // Conta de teste do Fly.io: a máquina é desligada a cada 5 minutos. Por isso:
 // - as listas lidas ficam guardadas por 3 horas (não relê tudo a cada religamento);
 // - a prévia e o lote de gravação continuam sozinhos quando o servidor religa;
@@ -166,9 +166,20 @@ function cfValor(ent, id) {
   return { texto: c.textValue || '', opcoes: c.options || [] };
 }
 
+// Valores do Bling claramente errados não sobrescrevem o Moskit (ficam como aviso)
+function valorSuspeito(chave, valor) {
+  const v = String(valor ?? '').trim();
+  const letras = (v.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+  if (['endereco', 'bairro', 'municipio'].includes(chave)) return letras < 2 ? 'sem letras' : '';
+  if (chave === 'numero') return (/[:]/.test(v) || v.length > 12 || letras > 4) ? 'não parece um número de endereço' : '';
+  if (chave === 'fantasia') return letras < 1 ? 'sem letras' : '';
+  return '';
+}
+
 function montarAtualizacao(entOriginal, tipo, desejado, ufs) {
   const ent = JSON.parse(JSON.stringify(entOriginal));
   const mudancas = [];
+  const avisos = [];
   const vazio = (v) => v === undefined || v === null || String(v).trim() === '';
 
   // Nome (compara só os 60 primeiros caracteres)
@@ -235,10 +246,14 @@ function montarAtualizacao(entOriginal, tipo, desejado, ufs) {
     if (!id || vazio(valor)) return;
     const atual = cfValor({ entityCustomFields: cfs }, id).texto;
     const lm = blingService._internals.limparMunicipio;
+    const alnum = (x) => String(x ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const igual = chave === 'cep' ? dig(atual) === dig(valor)
+      : chave === 'ie' ? alnum(atual) === alnum(valor) // "153.478.003.110" = "153478003110"
       : chave === 'municipio' ? norm(lm(atual)) === norm(lm(valor)) // "Cidade, SP, Brasil" = "Cidade"
       : norm(atual) === norm(valor);
     if (igual) return;
+    const susp = valorSuspeito(chave, valor);
+    if (susp) { avisos.push(`${ROTULO[chave]} do Bling ignorado ("${valor}": ${susp})`); return; }
     mudancas.push({ campo: ROTULO[chave], antes: atual, depois: String(valor) });
     const c = cfs.find(x => x.id === id);
     if (c) c.textValue = String(valor);
@@ -247,7 +262,10 @@ function montarAtualizacao(entOriginal, tipo, desejado, ufs) {
   const e = desejado.endereco || {};
   for (const k of ['endereco', 'numero', 'complemento', 'bairro', 'cep', 'municipio']) setTexto(k, e[k]);
   if (tipo === 'empresa') { setTexto('fantasia', desejado.fantasia); setTexto('ie', desejado.ie); }
-  if (e.uf && ufs && ufs[tipo] && ufs[tipo][e.uf]) {
+  const ufDoCep = e.cep ? blingService._internals.ufFromCep(e.cep) : '';
+  if (e.uf && ufDoCep && ufDoCep !== e.uf) {
+    avisos.push(`UF do Bling ignorada: "${e.uf}" não confere com o CEP ${e.cep} (${ufDoCep})`);
+  } else if (e.uf && ufs && ufs[tipo] && ufs[tipo][e.uf]) {
     const id = CF[tipo].uf, opt = ufs[tipo][e.uf];
     const c = cfs.find(x => x.id === id);
     const atual = c && (c.options || [])[0];
@@ -258,7 +276,7 @@ function montarAtualizacao(entOriginal, tipo, desejado, ufs) {
     }
   }
   ent.entityCustomFields = cfs;
-  return { ent, mudancas };
+  return { ent, mudancas, avisos };
 }
 
 // Corpo do PUT: o cadastro inteiro como veio do Moskit, só com os campos alterados
@@ -382,8 +400,8 @@ async function preparar() {
       // 3) Falta no Moskit: cria (PJ = empresa com CNPJ; PF = contato com CPF)
       const tipo = docD.length === 14 ? 'empresa' : 'contato';
       const des = desejadoDoBling(b, tipo);
-      const { mudancas } = montarAtualizacao({ name: '', phones: [], emails: [], entityCustomFields: [] }, tipo, des, ufs);
-      itens.push({ ...base, id: `c:${it.blingId}`, acao: 'criar_moskit', alvo: { tipo, id: null }, desejado: des, mudancas });
+      const { mudancas, avisos } = montarAtualizacao({ name: '', phones: [], emails: [], entityCustomFields: [] }, tipo, des, ufs);
+      itens.push({ ...base, id: `c:${it.blingId}`, acao: 'criar_moskit', alvo: { tipo, id: null }, desejado: des, mudancas, aviso: avisos.join(' · ') });
       continue;
     }
 
@@ -395,9 +413,9 @@ async function preparar() {
       catch (e) { itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, status: 'erro', erro: e.message, mudancas: [] }); continue; }
     }
     const des = desejadoDoBling(b, alvo.tipo);
-    const { mudancas } = montarAtualizacao(ent, alvo.tipo, des, ufs);
+    const { mudancas, avisos } = montarAtualizacao(ent, alvo.tipo, des, ufs);
     if (!mudancas.length) continue;
-    itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, porCorrespondencia: origemAlvo !== 'CPF/CNPJ' ? origemAlvo : '', moskitNome: ent.name, desejado: des, mudancas });
+    itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, porCorrespondencia: origemAlvo !== 'CPF/CNPJ' ? origemAlvo : '', moskitNome: ent.name, desejado: des, mudancas, aviso: avisos.join(' · ') });
   }
 
   if (anterior !== null) feitos.add(anterior);
@@ -413,7 +431,7 @@ async function preparar() {
   }
   itens.forEach((i, k) => { if (i.acao === 'escolha_manual' && !i.id.startsWith('m:')) i.id = `m${k}:${i.blingId}`; });
 
-  const plano = { geradoEm: new Date().toISOString(), resumo: resumoPlano(itens), itens };
+  const plano = { geradoEm: new Date().toISOString(), versao: VERSAO_REGRAS, resumo: resumoPlano(itens), itens };
   salvarPlano(plano);
   salvarAgora = null;
   try { fs.unlinkSync(ARQ_PROGRESSO); } catch (e) {}
@@ -530,6 +548,37 @@ async function aplicar(ids) {
   try { fs.unlinkSync(ARQ_LOTE); } catch (e) {}
 }
 
+// Recalcula uma prévia já pronta com as regras atuais, sem novas leituras no Bling
+// (usa as listas do Moskit guardadas e os dados do Bling que já estão em cada item).
+// Só remove ou reduz alterações: itens sem mudança somem; nada novo é acrescentado.
+async function recalcular() {
+  const plano = lerPlano();
+  if (!plano) throw new Error('Não há prévia para recalcular.');
+  if (plano.itens.some(i => i.status !== 'pendente' && i.acao !== 'escolha_manual' && i.acao !== 'excluido')) throw new Error('A prévia já tem cadastros gravados; prepare uma nova.');
+  let listas;
+  try { listas = JSON.parse(fs.readFileSync(ARQ_LISTAS, 'utf8')); } catch (e) { throw new Error('Os cadastros lidos não estão mais guardados; prepare uma nova prévia.'); }
+  const mapa = new Map();
+  for (const c of listas.contatos) mapa.set(`contato:${c.id}`, c);
+  for (const c of listas.empresas) mapa.set(`empresa:${c.id}`, c);
+  const ufs = await opcoesUf();
+  const novos = [];
+  for (const i of plano.itens) {
+    if (i.acao === 'atualizar_moskit') {
+      const ent = mapa.get(`${i.alvo.tipo}:${i.alvo.id}`);
+      if (!ent) { novos.push(i); continue; }
+      const r = montarAtualizacao(ent, i.alvo.tipo, i.desejado, ufs);
+      if (!r.mudancas.length) continue;
+      novos.push({ ...i, mudancas: r.mudancas, aviso: r.avisos.join(' · ') });
+    } else if (i.acao === 'criar_moskit') {
+      const r = montarAtualizacao({ name: '', phones: [], emails: [], entityCustomFields: [] }, i.alvo.tipo, i.desejado, ufs);
+      novos.push({ ...i, mudancas: r.mudancas, aviso: r.avisos.join(' · ') });
+    } else novos.push(i);
+  }
+  const novo = { ...plano, versao: VERSAO_REGRAS, recalculadoEm: new Date().toISOString(), itens: novos, resumo: resumoPlano(novos) };
+  salvarPlano(novo);
+  return novo;
+}
+
 // Ao religar o servidor: continua a prévia ou o lote de gravação que estavam em andamento
 function retomarAoIniciar() {
   try {
@@ -574,6 +623,7 @@ module.exports = {
     return { ok: true };
   },
   retomarAoIniciar,
+  iniciarRecalculo: () => executar('recalcular', recalcular),
   salvarAoDesligar: () => { try { if (salvarAgora) salvarAgora(); } catch (e) {} },
   status: () => {
     let progresso = null;

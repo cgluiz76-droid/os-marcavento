@@ -751,6 +751,10 @@ app.post('/api/contatos/sync/aplicar', (req, res) => {
     res.json({ success: true, ...contatosSync.iniciarAplicacao(ids) });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
+app.post('/api/contatos/sync/recalcular', (req, res) => {
+  try { res.json({ success: true, ...contatosSync.iniciarRecalculo() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
 app.post('/api/contatos/sync/parar', (req, res) => {
   res.json({ success: true, ...contatosSync.parar() });
 });
