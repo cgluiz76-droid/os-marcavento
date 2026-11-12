@@ -731,6 +731,30 @@ app.post('/api/contatos/diagnostico', (req, res) => {
   catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+// Sincronização Bling -> Moskit: "preparar" só lê; "aplicar" grava apenas os itens confirmados
+const contatosSync = require('./contatosSyncService');
+app.get('/api/contatos/sync', (req, res) => {
+  try { res.json({ success: true, ...contatosSync.status() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/contatos/sync/preparar', (req, res) => {
+  try { res.json({ success: true, ...contatosSync.iniciarPreparo() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/contatos/sync/aplicar', (req, res) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return res.status(400).json({ success: false, error: 'Nenhum cadastro selecionado.' });
+    const confirmacao = String((req.body && req.body.confirmacao) || '').trim().toUpperCase();
+    if (ids.length > 1 && confirmacao !== 'SINCRONIZAR') return res.status(400).json({ success: false, error: 'Para gravar mais de um cadastro, digite SINCRONIZAR na confirmação.' });
+    if (ids.length === 1 && req.body.confirmado !== true) return res.status(400).json({ success: false, error: 'Confirmação necessária.' });
+    res.json({ success: true, ...contatosSync.iniciarAplicacao(ids) });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/contatos/sync/parar', (req, res) => {
+  res.json({ success: true, ...contatosSync.parar() });
+});
+
 // ==========================================
 // TEST ENDPOINT: SIMULATE DEAL IMPORT
 // ==========================================

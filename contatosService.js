@@ -38,18 +38,26 @@ function formatarDoc(d) {
 // Telefone no padrão (DD) 99999-9999 / (DD) 9999-9999
 function analisarTelefone(raw) {
   const original = String(raw ?? '').trim();
-  if (!original) return { original, digitos: '', padrao: '', problema: '' };
-  if (/[a-zA-Z]{3,}/.test(original)) return { original, digitos: '', padrao: '', problema: 'texto no lugar do telefone' };
+  if (!original) return { original, digitos: '', padrao: '', problema: '', final: '', digitosFinal: '' };
+  if (/[a-zA-Z]{3,}/.test(original)) return { original, digitos: '', padrao: '', problema: 'texto no lugar do telefone', final: '', digitosFinal: '' };
   let d = digitos(original);
   if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
   if (d.length > 11 && d.startsWith('0')) d = d.replace(/^0+/, '');
   if (d.length === 11 && d.startsWith('0')) d = d.slice(1); // 0 + DDD + 8 dígitos
-  if (d.length === 8 || d.length === 9) return { original, digitos: d, padrao: '', problema: 'sem DDD' };
-  if (d.length !== 10 && d.length !== 11) return { original, digitos: d, padrao: '', problema: 'quantidade de dígitos inválida' };
+  if (d.length === 8 || d.length === 9) return { original, digitos: d, padrao: '', problema: 'sem DDD', final: '', digitosFinal: d };
+  if (d.length !== 10 && d.length !== 11) return { original, digitos: d, padrao: '', problema: 'quantidade de dígitos inválida', final: '', digitosFinal: d };
   const ddd = d.slice(0, 2), num = d.slice(2);
   const padrao = num.length === 9 ? `(${ddd}) ${num.slice(0, 5)}-${num.slice(5)}` : `(${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
   const problema = (num.length === 8 && /^[6-9]/.test(num)) ? 'celular sem o 9' : '';
-  return { original, digitos: d, padrao, problema };
+  // "final": padrão a gravar. Celular sem o 9 recebe o 9 (decisão do usuário: incluir nos 2 sistemas)
+  const final = problema ? `(${ddd}) 9${num.slice(0, 4)}-${num.slice(4)}` : padrao;
+  const digitosFinal = problema ? ddd + '9' + num : d;
+  return { original, digitos: d, padrao, problema, final, digitosFinal };
+}
+
+// O Moskit guarda no máximo 60 caracteres no nome: a comparação usa só os 60 primeiros
+function mesmoNome(a, b) {
+  return normNome(String(a ?? '').slice(0, 60)) === normNome(String(b ?? '').slice(0, 60));
 }
 
 function normNome(v) {
@@ -177,11 +185,12 @@ function comparar(blingLista, contatosMk, empresasMk, meta) {
     const telB = analisarTelefone(b.telefone || b.celular);
     const base = {
       blingId: b.id, nome: b.nome || '', doc: d ? formatarDoc(d) : '', pessoa: d.length === 14 ? 'J' : d.length === 11 ? 'F' : '',
-      telefoneBling: telB.original, telefonePadrao: telB.padrao, moskit: null, diferencas: [], sugestoes: [], alertas: []
+      telefoneBling: telB.original, telefonePadrao: telB.final, moskit: null, diferencas: [], sugestoes: [], alertas: []
     };
     if (telB.problema) base.alertas.push(`Telefone no Bling: ${telB.problema}`);
 
     if (!d || docZerado(d)) { itens.push({ ...base, status: 'sem_documento' }); continue; }
+    if (meta.excluidos && meta.excluidos.includes(d)) base.alertas.push('Excluído da sincronização (decisão do usuário)');
     const valido = d.length === 11 ? cpfValido(d) : d.length === 14 ? cnpjValido(d) : false;
     if (!valido) problemasBling.push({ blingId: b.id, nome: b.nome, doc: b.numeroDocumento, problema: 'CPF/CNPJ inválido' });
     if (blingPorDoc.has(d)) {
@@ -209,13 +218,13 @@ function comparar(blingLista, contatosMk, empresasMk, meta) {
     const item = { ...base, moskit: mk };
     if (escolhido.tipo !== esperado) item.alertas.push(`No Moskit está cadastrado como ${escolhido.tipo}`);
 
-    if (normNome(b.nome) !== normNome(mk.nome)) item.diferencas.push({ campo: 'Nome', bling: b.nome || '', moskit: mk.nome || '(vazio)' });
+    if (!mesmoNome(b.nome, mk.nome)) item.diferencas.push({ campo: 'Nome', bling: b.nome || '', moskit: mk.nome || '(vazio)' });
     let soFormato = false;
     if (telB.digitos) {
       const telsMk = mk.telefones.map(analisarTelefone);
-      const igual = telsMk.find(t => t.digitos && t.digitos === telB.digitos);
+      const igual = telsMk.find(t => t.digitos && (t.digitos === telB.digitos || (t.digitosFinal && t.digitosFinal === telB.digitosFinal)));
       if (!igual) item.diferencas.push({ campo: 'Telefone', bling: telB.original, moskit: mk.telefones.join(' / ') || '(vazio)' });
-      else if (telB.padrao && igual.original !== telB.padrao) soFormato = true;
+      else if (telB.final && igual.original !== telB.final) soFormato = true;
     }
     item.status = item.diferencas.length ? 'divergente' : (soFormato ? 'formato' : 'ok');
     itens.push(item);
@@ -244,6 +253,17 @@ function comparar(blingLista, contatosMk, empresasMk, meta) {
 // ---------------------------------------------------------------
 const estado = { rodando: false, etapa: '', inicio: null, erro: null };
 
+// CPF/CNPJ (só dígitos) que nunca são alterados pela sincronização. Padrão: INSTITUTO BW (decisão do usuário)
+const EXCLUIDOS_PADRAO = ['35960609000197'];
+function excluidosDocs() {
+  try {
+    const blingDb = require('./blingDb');
+    const v = blingDb.getConfig('contatos_excluidos', '');
+    const lista = String(v || '').split(/[\s,;]+/).map(digitos).filter(Boolean);
+    return [...new Set([...EXCLUIDOS_PADRAO, ...lista])];
+  } catch (e) { return EXCLUIDOS_PADRAO; }
+}
+
 function lerResultado() {
   try { return JSON.parse(fs.readFileSync(ARQUIVO, 'utf8')); } catch (e) { return null; }
 }
@@ -258,6 +278,7 @@ function iniciarDiagnostico() {
       const empresas = await moskitTodos('companies', n => { estado.etapa = `Lendo empresas do Moskit… ${n}`; });
       estado.etapa = 'Comparando…';
       const r = comparar(bling, contatos, empresas, {
+        excluidos: excluidosDocs(),
         filtradoPorTipoCliente: filtradoPorTipo, contatosMoskit: contatos.length, empresasMoskit: empresas.length,
         duracaoSeg: Math.round((Date.now() - Date.parse(estado.inicio)) / 1000)
       });
@@ -279,4 +300,9 @@ function status() {
   return { ...estado, resultado: lerResultado() };
 }
 
-module.exports = { iniciarDiagnostico, status, _internals: { analisarTelefone, normNome, cpfValido, cnpjValido, formatarDoc, comparar } };
+module.exports = {
+  iniciarDiagnostico, status, lerResultado, excluidosDocs,
+  // usados pela sincronização
+  blingClientes, moskitTodos, comparar, analisarTelefone, normNome, mesmoNome, formatarDoc, digitos,
+  _internals: { analisarTelefone, normNome, cpfValido, cnpjValido, formatarDoc, comparar }
+};

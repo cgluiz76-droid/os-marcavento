@@ -7,6 +7,21 @@ const ContatosManager = {
   busca: '',
   timer: null,
   LIMITE: 300,
+  sync: null,
+  syncFiltro: 'atualizar_moskit',
+  selecionados: new Set(),
+  selecaoIniciada: false,
+  syncTimer: null,
+
+  ACOES: {
+    atualizar_moskit: 'Atualizar no Moskit',
+    criar_moskit: 'Criar no Moskit',
+    corrigir_bling: 'Incluir o 9 no Bling',
+    escolha_manual: 'Escolha manual',
+    excluido: 'Excluído',
+    erro_leitura: 'Erro de leitura'
+  },
+  GRAVAVEIS: ['atualizar_moskit', 'criar_moskit', 'corrigir_bling'],
 
   STATUS: {
     ok: { rotulo: 'Igual', classe: 'ok' },
@@ -21,8 +36,21 @@ const ContatosManager = {
     document.getElementById('btn-open-contatos')?.addEventListener('click', () => this.open());
     document.getElementById('contatos-btn-verificar')?.addEventListener('click', () => this.verificar());
     document.getElementById('contatos-busca')?.addEventListener('input', (e) => { this.busca = e.target.value; this.render(); });
+    document.getElementById('contatos-sync-preparar')?.addEventListener('click', () => this.syncPreparar());
+    document.getElementById('contatos-sync-parar')?.addEventListener('click', () => this.syncParar());
+    document.getElementById('contatos-sync-teste')?.addEventListener('click', () => this.syncGravar(true));
+    document.getElementById('contatos-sync-gravar')?.addEventListener('click', () => this.syncGravar(false));
+    document.getElementById('contatos-sync-marcar')?.addEventListener('click', () => this.syncMarcar(true));
+    document.getElementById('contatos-sync-desmarcar')?.addEventListener('click', () => this.syncMarcar(false));
+    document.getElementById('contatos-tabela')?.addEventListener('change', (e) => {
+      const cb = e.target.closest('input[data-sel]');
+      if (!cb) return;
+      if (cb.checked) this.selecionados.add(cb.dataset.sel); else this.selecionados.delete(cb.dataset.sel);
+      this.syncContagem();
+    });
     document.querySelectorAll('[data-contatos-aba]').forEach(b => b.addEventListener('click', () => {
       this.aba = b.dataset.contatosAba;
+      if (this.aba === 'sync') this.syncCarregar();
       document.querySelectorAll('[data-contatos-aba]').forEach(x => x.classList.toggle('active', x === b));
       this.render();
     }));
@@ -124,6 +152,10 @@ const ContatosManager = {
   },
 
   render() {
+    const emSync = this.aba === 'sync';
+    document.getElementById('contatos-sync').style.display = emSync ? '' : 'none';
+    document.getElementById('contatos-cards').style.display = emSync ? 'none' : '';
+    if (emSync) { document.getElementById('contatos-filtros').innerHTML = ''; return this.syncRender(); }
     this.cards();
     this.filtros();
     const tab = document.getElementById('contatos-tabela');
@@ -181,5 +213,148 @@ const ContatosManager = {
       `Base lida: ${this.dados.resumo.clientesBling} clientes do Bling${m.filtradoPorTipoCliente ? ' (tipo Cliente)' : ''}, ${m.contatosMoskit} contatos e ${m.empresasMoskit} empresas do Moskit; ${m.ignoradosCnpjZerado || 0} empresas com CNPJ zerado ignoradas.`;
   }
 };
+
+Object.assign(ContatosManager, {
+  async syncCarregar() {
+    try {
+      const r = await fetch('/api/contatos/sync').then(r => r.json());
+      if (!r.success) throw new Error(r.error);
+      const planoNovo = r.plano && (!this.sync || !this.sync.plano || this.sync.plano.geradoEm !== r.plano.geradoEm);
+      this.sync = r;
+      if (planoNovo || !this.selecaoIniciada) this.syncSelecaoPadrao();
+      if (this.aba === 'sync') this.syncRender();
+      clearTimeout(this.syncTimer);
+      if (r.rodando) this.syncTimer = setTimeout(() => this.syncCarregar(), 2500);
+    } catch (e) {
+      document.getElementById('contatos-sync-status').textContent = 'Erro: ' + e.message;
+    }
+  },
+
+  syncSelecaoPadrao() {
+    this.selecionados = new Set();
+    const p = this.sync && this.sync.plano;
+    if (!p) return;
+    p.itens.forEach(i => { if (this.GRAVAVEIS.includes(i.acao) && i.status === 'pendente') this.selecionados.add(i.id); });
+    this.selecaoIniciada = true;
+  },
+
+  async syncPreparar() {
+    const r = await fetch('/api/contatos/sync/preparar', { method: 'POST' }).then(r => r.json()).catch(e => ({ success: false, error: e.message }));
+    if (!r.success) return this.toast(r.error || 'Falha ao preparar', 'error');
+    if (!r.iniciado) this.toast(r.motivo || 'Já existe uma tarefa em andamento.', 'info');
+    this.syncCarregar();
+  },
+
+  async syncParar() {
+    await fetch('/api/contatos/sync/parar', { method: 'POST' }).catch(() => {});
+    this.toast('Pedido de parada enviado. O cadastro em andamento termina e a tarefa para.', 'info');
+    this.syncCarregar();
+  },
+
+  syncItensFiltro() {
+    const p = this.sync && this.sync.plano;
+    if (!p) return [];
+    return p.itens.filter(i => (this.syncFiltro === 'todos' || i.acao === this.syncFiltro || (this.syncFiltro === 'erros' && i.status === 'erro') || (this.syncFiltro === 'gravados' && i.status === 'ok'))
+      && this.casaBusca(i.nome, i.doc, (i.mudancas || []).map(m => m.depois).join(' ')));
+  },
+
+  syncMarcar(marcar) {
+    this.syncItensFiltro().forEach(i => {
+      if (!this.GRAVAVEIS.includes(i.acao) || i.status !== 'pendente') return;
+      if (marcar) this.selecionados.add(i.id); else this.selecionados.delete(i.id);
+    });
+    this.syncRender();
+  },
+
+  syncSelecionadosValidos() {
+    const p = this.sync && this.sync.plano;
+    if (!p) return [];
+    return p.itens.filter(i => this.selecionados.has(i.id) && this.GRAVAVEIS.includes(i.acao) && i.status === 'pendente');
+  },
+
+  syncContagem() {
+    const n = this.syncSelecionadosValidos().length;
+    document.getElementById('contatos-sync-selecao').innerHTML = `<strong>${n.toLocaleString('pt-BR')}</strong> cadastro(s) marcados para gravar`;
+    document.getElementById('contatos-sync-gravar').textContent = `✅ Gravar selecionados (${n.toLocaleString('pt-BR')})`;
+  },
+
+  async syncGravar(soUm) {
+    const validos = this.syncSelecionadosValidos();
+    if (!validos.length) return this.toast('Nenhum cadastro marcado.', 'info');
+    let corpo;
+    if (soUm) {
+      const visiveis = new Set(this.syncItensFiltro().map(i => i.id));
+      const item = validos.find(i => visiveis.has(i.id)) || validos[0];
+      corpo = { ids: [item.id], confirmado: true };
+      this.toast(`Gravando 1 cadastro de teste: ${item.nome}`, 'info');
+    } else {
+      const conf = document.getElementById('contatos-sync-confirmacao').value.trim().toUpperCase();
+      if (conf !== 'SINCRONIZAR') return this.toast('Digite SINCRONIZAR no campo ao lado para confirmar.', 'error');
+      corpo = { ids: validos.map(i => i.id), confirmacao: 'SINCRONIZAR' };
+    }
+    const r = await fetch('/api/contatos/sync/aplicar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+      .then(r => r.json()).catch(e => ({ success: false, error: e.message }));
+    if (!r.success) return this.toast(r.error || 'Falha ao gravar', 'error');
+    if (!r.iniciado) return this.toast(r.motivo || 'Já existe uma tarefa em andamento.', 'info');
+    document.getElementById('contatos-sync-confirmacao').value = '';
+    this.syncCarregar();
+  },
+
+  syncRender() {
+    const st = this.sync || {};
+    const p = st.plano;
+    const elSt = document.getElementById('contatos-sync-status');
+    document.getElementById('contatos-sync-preparar').disabled = !!st.rodando;
+    document.getElementById('contatos-sync-parar').style.display = st.rodando ? '' : 'none';
+    ['contatos-sync-teste', 'contatos-sync-gravar'].forEach(id => { document.getElementById(id).disabled = !!st.rodando; });
+    if (st.rodando) elSt.textContent = '⏳ ' + (st.etapa || 'Trabalhando…') + (st.tarefa === 'preparar' ? ' (a prévia confere cadastro por cadastro e pode levar de 20 a 40 minutos; pode fechar a janela)' : '');
+    else if (st.erro) elSt.textContent = '⚠️ ' + st.erro;
+    else if (p) elSt.textContent = 'Prévia de ' + this.dataHora(p.geradoEm) + '.';
+    else elSt.textContent = 'Nenhuma prévia preparada ainda.';
+
+    const cards = document.getElementById('contatos-sync-cards');
+    const filtros = document.getElementById('contatos-sync-filtros');
+    const tab = document.getElementById('contatos-tabela');
+    const rod = document.getElementById('contatos-rodape');
+    document.getElementById('contatos-sync-acoes').style.display = p ? '' : 'none';
+    if (!p) { cards.innerHTML = ''; filtros.innerHTML = ''; tab.innerHTML = ''; rod.textContent = ''; return; }
+
+    const res = p.resumo || {};
+    cards.innerHTML = Object.keys(this.ACOES).filter(a => res[a]).map(a => {
+      const r = res[a];
+      const extra = this.GRAVAVEIS.includes(a) ? `${r.pendente || 0} pendentes · ${r.ok || 0} gravados${r.erro ? ' · ' + r.erro + ' com erro' : ''}` : (a === 'escolha_manual' ? 'não são gravados' : '');
+      return `<button type="button" class="contatos-card ${this.syncFiltro === a ? 'active' : ''}" data-sf="${a}"><strong>${r.total.toLocaleString('pt-BR')}</strong><span>${this.esc(this.ACOES[a])}<br>${this.esc(extra)}</span></button>`;
+    }).join('');
+    cards.querySelectorAll('[data-sf]').forEach(b => b.addEventListener('click', () => { this.syncFiltro = b.dataset.sf; this.syncRender(); }));
+
+    const ops = [['atualizar_moskit', 'Atualizar no Moskit'], ['criar_moskit', 'Criar no Moskit'], ['corrigir_bling', 'Incluir o 9 no Bling'], ['escolha_manual', 'Escolha manual'], ['gravados', 'Gravados'], ['erros', 'Com erro'], ['todos', 'Todos']];
+    filtros.innerHTML = ops.map(([f, t]) => `<button type="button" class="filter-pill ${this.syncFiltro === f ? 'active' : ''}" data-sff="${f}">${t}</button>`).join('');
+    filtros.querySelectorAll('[data-sff]').forEach(b => b.addEventListener('click', () => { this.syncFiltro = b.dataset.sff; this.syncRender(); }));
+
+    const itens = this.syncItensFiltro();
+    const SIT = { pendente: ['Pendente', 'pendente'], ok: ['Gravado', 'ok'], erro: ['Erro', 'erro'], sem_mudanca: ['Já estava igual', 'ignorado'] };
+    tab.innerHTML = '<thead><tr><th></th><th>Cliente (Bling)</th><th>Ação</th><th>Cadastro de destino</th><th>Alterações (antes → depois)</th><th>Situação</th></tr></thead><tbody>' +
+      (itens.slice(0, this.LIMITE).map(i => {
+        const gravavel = this.GRAVAVEIS.includes(i.acao) && i.status === 'pendente';
+        const destino = i.acao === 'corrigir_bling' ? `Bling #${this.esc(i.blingId)}` :
+          i.acao === 'criar_moskit' ? (i.alvo && i.alvo.id ? `${i.alvo.tipo === 'empresa' ? 'Empresa' : 'Contato'} #${this.esc(i.alvo.id)}` : `Nova ${i.alvo && i.alvo.tipo === 'empresa' ? 'empresa' : 'pessoa (contato)'}`) :
+          i.alvo ? `${i.alvo.tipo === 'empresa' ? 'Empresa' : 'Contato'} #${this.esc(i.alvo.id)}<small>${this.esc(i.moskitNome || '')}</small>${i.porCorrespondencia ? `<small>⚠️ encontrado por ${this.esc(i.porCorrespondencia)} (sem CPF/CNPJ no Moskit)</small>` : ''}` : '-';
+        let det = (i.mudancas || []).map(m => `<div class="contatos-dif"><b>${this.esc(m.campo)}:</b> <span class="antes">${this.esc(m.antes || '(vazio)')}</span> → <span class="depois">${this.esc(m.depois)}</span></div>`).join('');
+        if (i.sugestoes) det += i.sugestoes.map(sg => `<div class="contatos-dif">${this.moskitLink(sg)}: ${this.esc(sg.nome)} ${sg.telefone ? '· ' + this.esc(sg.telefone) : ''} <small>(${this.esc(sg.motivo)})</small></div>`).join('');
+        if (i.aviso) det += `<div class="contatos-dif">ℹ️ ${this.esc(i.aviso)}</div>`;
+        if (i.erro) det += `<div class="contatos-dif antes">⚠️ ${this.esc(i.erro)}</div>`;
+        const sit = SIT[i.status] || [i.status, ''];
+        return `<tr>
+          <td>${gravavel ? `<input type="checkbox" data-sel="${this.esc(i.id)}" ${this.selecionados.has(i.id) ? 'checked' : ''} aria-label="Selecionar ${this.esc(i.nome)}">` : ''}</td>
+          <td>${this.esc(i.nome)}<small>${this.esc(i.doc || '')}</small></td>
+          <td>${this.esc(this.ACOES[i.acao] || i.acao)}</td>
+          <td>${destino}</td>
+          <td>${det || '-'}</td>
+          <td><span class="bling-pill ${sit[1]}">${this.esc(sit[0])}</span></td></tr>`;
+      }).join('') || '<tr><td colspan="6" class="bling-empty">Nada para mostrar com este filtro.</td></tr>') + '</tbody>';
+    rod.textContent = `Mostrando ${Math.min(itens.length, this.LIMITE).toLocaleString('pt-BR')} de ${itens.length.toLocaleString('pt-BR')}${itens.length > this.LIMITE ? ' (use a busca para encontrar um cadastro específico; "Marcar/Desmarcar todos do filtro" vale para todos, inclusive os não exibidos)' : ''}.`;
+    this.syncContagem();
+  }
+});
 
 document.addEventListener('DOMContentLoaded', () => ContatosManager.init());
