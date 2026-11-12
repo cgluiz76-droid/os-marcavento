@@ -720,6 +720,17 @@ app.get('/api/orders/:id/pdf', async (req, res) => {
 // ==========================================
 app.use(blingRoutes);
 
+// Diagnóstico de contatos Bling x Moskit (somente leitura)
+const contatosService = require('./contatosService');
+app.get('/api/contatos/diagnostico', (req, res) => {
+  try { res.json({ success: true, ...contatosService.status() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/contatos/diagnostico', (req, res) => {
+  try { res.json({ success: true, ...contatosService.iniciarDiagnostico() }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
 // ==========================================
 // TEST ENDPOINT: SIMULATE DEAL IMPORT
 // ==========================================

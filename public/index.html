@@ -6,7 +6,7 @@
   <title>Sistema O.S. Marca Vento | Integração Moskit CRM</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/print.css">
-  <link rel="stylesheet" href="css/bling.css?v=20261109a">
+  <link rel="stylesheet" href="css/bling.css?v=20261112a">
   <script>
     (function () {
       var t = localStorage.getItem('mv-theme') || 'dark';
@@ -49,6 +49,10 @@
 
         <button class="btn btn-outline-gold" id="btn-open-bling" title="Conferir e enviar pedidos ao Bling">
           <span>📦</span> Bling <span class="bling-count-badge" id="bling-pending-badge" style="display: none;">0</span>
+        </button>
+
+        <button class="btn btn-secondary" id="btn-open-contatos" title="Comparar os clientes do Bling com os contatos do Moskit">
+          <span>👥</span> Contatos
         </button>
 
         <button class="btn btn-secondary" id="btn-open-mappings" title="Parametrizar campos do Moskit">
@@ -854,6 +858,47 @@
   </div>
 
   <!-- ============================================== -->
+  <!-- MODAL: CONTATOS Bling x Moskit (diagnóstico)   -->
+  <!-- ============================================== -->
+  <div class="modal-backdrop" id="modal-contatos">
+    <div class="modal-container" style="max-width: 1180px;">
+      <div class="modal-header">
+        <h2><span>👥</span> Contatos: Bling × Moskit</h2>
+        <button class="modal-close-btn" data-close="modal-contatos">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="bling-toolbar">
+          <div>
+            <button type="button" class="btn btn-primary" id="contatos-btn-verificar">🔄 Verificar agora</button>
+            <span class="bling-hint" id="contatos-status" style="margin-left: 0.75rem;"></span>
+          </div>
+          <div class="bling-deal-input">
+            <input type="search" id="contatos-busca" placeholder="Buscar por nome, CPF/CNPJ ou telefone">
+          </div>
+        </div>
+        <p class="bling-hint">Somente leitura: nada é alterado no Bling nem no Moskit. O Bling é a referência. A comparação é feita pelos <strong>números</strong> do CPF/CNPJ (com ou sem pontuação dá no mesmo). E-mail e endereço serão comparados um a um na etapa de sincronização. Empresas com CNPJ zerado no Moskit são ignoradas.</p>
+
+        <div class="contatos-cards" id="contatos-cards"></div>
+
+        <div class="bling-tabs" id="contatos-abas">
+          <button type="button" class="filter-pill active" data-contatos-aba="clientes">Clientes do Bling</button>
+          <button type="button" class="filter-pill" data-contatos-aba="problemasMoskit">Problemas no Moskit</button>
+          <button type="button" class="filter-pill" data-contatos-aba="problemasBling">Problemas no Bling</button>
+          <button type="button" class="filter-pill" data-contatos-aba="soMoskit">Só no Moskit</button>
+        </div>
+        <div class="bling-filters" id="contatos-filtros" style="margin-bottom: 0.75rem;"></div>
+        <div class="table-responsive">
+          <table class="bling-table" id="contatos-tabela"></table>
+        </div>
+        <p class="bling-hint" id="contatos-rodape"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close="modal-contatos">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
   <!-- MODAL: INTEGRAÇÃO BLING (Moskit -> Bling)      -->
   <!-- ============================================== -->
   <div class="modal-backdrop" id="modal-bling">
@@ -1086,6 +1131,7 @@
   <script src="js/skuManager.js"></script>
   <script src="js/print.js"></script>
   <script src="js/app.js"></script>
-  <script src="js/bling.js?v=20261109a"></script>
+  <script src="js/bling.js?v=20261112a"></script>
+  <script src="js/contatos.js?v=20261112a"></script>
 </body>
 </html>

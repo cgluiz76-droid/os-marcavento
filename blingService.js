@@ -1536,6 +1536,8 @@ module.exports = {
   // Fluxo principal
   buildPreview,
   sendDeal,
+  // Leitura genérica (usada pelo diagnóstico de contatos)
+  blingFetch,
   // Exportado para testes
   _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext }
 };
