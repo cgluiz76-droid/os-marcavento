@@ -6,7 +6,7 @@
   <title>Sistema O.S. Marca Vento | Integração Moskit CRM</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/print.css">
-  <link rel="stylesheet" href="css/bling.css?v=20261112a">
+  <link rel="stylesheet" href="css/bling.css?v=20261112b">
   <script>
     (function () {
       var t = localStorage.getItem('mv-theme') || 'dark';
@@ -885,6 +885,29 @@
           <button type="button" class="filter-pill" data-contatos-aba="problemasMoskit">Problemas no Moskit</button>
           <button type="button" class="filter-pill" data-contatos-aba="problemasBling">Problemas no Bling</button>
           <button type="button" class="filter-pill" data-contatos-aba="soMoskit">Só no Moskit</button>
+          <button type="button" class="filter-pill" data-contatos-aba="sync">🔁 Sincronizar</button>
+        </div>
+        <div id="contatos-sync" style="display: none;">
+          <div class="bling-box contatos-sync-box">
+            <p style="margin: 0 0 0.5rem;"><strong>Como funciona:</strong> 1) <strong>Preparar prévia</strong> só lê o Bling e o Moskit e mostra cada alteração (antes → depois). 2) Desmarque o que não quiser. 3) Grave primeiro <strong>só 1 cadastro</strong> para conferir no Moskit, depois os demais. Nada é apagado, cada cadastro alterado tem cópia de segurança, e o INSTITUTO BW não é alterado.</p>
+            <div class="bling-actions-right" style="justify-content: flex-start;">
+              <button type="button" class="btn btn-secondary" id="contatos-sync-preparar">🔎 Preparar prévia (só leitura)</button>
+              <button type="button" class="btn btn-secondary" id="contatos-sync-parar" style="display: none;">⏹️ Parar</button>
+              <span class="bling-hint" id="contatos-sync-status" style="margin: 0; align-self: center;"></span>
+            </div>
+          </div>
+          <div class="contatos-cards" id="contatos-sync-cards"></div>
+          <div class="bling-filters" id="contatos-sync-filtros" style="margin-bottom: 0.75rem;"></div>
+          <div class="bling-confirm-bar" id="contatos-sync-acoes" style="display: none;">
+            <span id="contatos-sync-selecao"></span>
+            <div class="bling-confirm-buttons">
+              <button type="button" class="btn btn-secondary" id="contatos-sync-marcar">Marcar todos do filtro</button>
+              <button type="button" class="btn btn-secondary" id="contatos-sync-desmarcar">Desmarcar todos do filtro</button>
+              <button type="button" class="btn btn-outline-gold" id="contatos-sync-teste">🧪 Gravar só 1 (teste)</button>
+              <input type="text" id="contatos-sync-confirmacao" placeholder="Digite SINCRONIZAR" autocomplete="off" style="max-width: 190px;">
+              <button type="button" class="btn btn-primary" id="contatos-sync-gravar">✅ Gravar selecionados</button>
+            </div>
+          </div>
         </div>
         <div class="bling-filters" id="contatos-filtros" style="margin-bottom: 0.75rem;"></div>
         <div class="table-responsive">
@@ -1132,6 +1155,6 @@
   <script src="js/print.js"></script>
   <script src="js/app.js"></script>
   <script src="js/bling.js?v=20261112a"></script>
-  <script src="js/contatos.js?v=20261112a"></script>
+  <script src="js/contatos.js?v=20261112b"></script>
 </body>
 </html>

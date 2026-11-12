@@ -1538,6 +1538,7 @@ module.exports = {
   sendDeal,
   // Leitura genérica (usada pelo diagnóstico de contatos)
   blingFetch,
+  _limparVazios: limparVazios,
   // Exportado para testes
   _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext }
 };

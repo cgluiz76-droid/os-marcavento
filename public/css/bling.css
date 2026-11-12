@@ -226,3 +226,14 @@ details.bling-json pre {
 .contatos-dif .depois { color: var(--accent-green); }
 #contatos-busca { min-width: 260px; }
 @media (max-width: 640px) { #contatos-busca { min-width: 0; width: 100%; } }
+
+.contatos-sync-box p { font-size: 0.86rem; }
+.contatos-sync-box .bling-actions-right { margin: 0; }
+#contatos-sync-acoes { margin-bottom: 0.75rem; }
+#contatos-sync-confirmacao { padding: 0.45rem 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); }
+
+/* Celular: o cabeçalho quebra linha em vez de criar rolagem lateral (não muda nada no computador) */
+@media (max-width: 640px) {
+  .header-container { flex-wrap: wrap; }
+  .header-actions { width: 100%; }
+}
