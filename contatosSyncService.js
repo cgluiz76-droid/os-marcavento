@@ -29,7 +29,45 @@ const ARQ_PLANO = path.join(DIR, 'contatos_sync_plano.json');
 const ARQ_BACKUP = path.join(DIR, 'contatos_sync_backup.jsonl');
 const ARQ_PROGRESSO = path.join(DIR, 'contatos_sync_progresso.json');
 // Aumentar quando mudar a regra de comparação: progresso de prévia antiga é descartado
-const VERSAO_REGRAS = 2;
+const VERSAO_REGRAS = 3;
+// Conta de teste do Fly.io: a máquina é desligada a cada 5 minutos. Por isso:
+// - as listas lidas ficam guardadas por 3 horas (não relê tudo a cada religamento);
+// - a prévia e o lote de gravação continuam sozinhos quando o servidor religa;
+// - o progresso é salvo no aviso de desligamento.
+const ARQ_LISTAS = path.join(DIR, 'contatos_sync_listas.json');
+const ARQ_LOTE = path.join(DIR, 'contatos_sync_lote.json');
+const VALIDADE_LISTAS_MS = 3 * 3600 * 1000;
+let salvarAgora = null;
+
+// Só o necessário para comparar (a listagem do Moskit traz também negócios, atividades etc.)
+function enxuto(e) {
+  return { id: e.id, name: e.name, cpf: e.cpf, cnpj: e.cnpj, phones: e.phones, primaryPhone: e.primaryPhone,
+    emails: e.emails, primaryEmail: e.primaryEmail, entityCustomFields: e.entityCustomFields };
+}
+function gravarJson(arq, obj) {
+  fs.mkdirSync(DIR, { recursive: true });
+  const tmp = arq + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.renameSync(tmp, arq);
+}
+async function lerListas(forcar) {
+  if (!forcar) {
+    try {
+      const c = JSON.parse(fs.readFileSync(ARQ_LISTAS, 'utf8'));
+      if (Date.now() - Date.parse(c.lidoEm) < VALIDADE_LISTAS_MS) {
+        estado.etapa = 'Usando os cadastros já lidos às ' + new Date(c.lidoEm).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '…';
+        return c;
+      }
+    } catch (e) { /* sem cache */ }
+  }
+  estado.etapa = 'Lendo clientes do Bling…';
+  const { contatos: bling } = await cs.blingClientes(n => { estado.etapa = `Lendo clientes do Bling… ${n}`; });
+  const contatos = (await cs.moskitTodos('contacts', n => { estado.etapa = `Lendo contatos do Moskit… ${n}`; })).map(enxuto);
+  const empresas = (await cs.moskitTodos('companies', n => { estado.etapa = `Lendo empresas do Moskit… ${n}`; })).map(enxuto);
+  const c = { lidoEm: new Date().toISOString(), bling, contatos, empresas };
+  gravarJson(ARQ_LISTAS, c);
+  return c;
+}
 
 const CF = {
   empresa: {
@@ -269,10 +307,10 @@ function resumoPlano(itens) {
 
 async function preparar() {
   const excluidos = cs.excluidosDocs();
-  estado.etapa = 'Lendo clientes do Bling…';
-  const { contatos: bling } = await cs.blingClientes(n => { estado.etapa = `Lendo clientes do Bling… ${n}`; });
-  const contatos = await cs.moskitTodos('contacts', n => { estado.etapa = `Lendo contatos do Moskit… ${n}`; });
-  const empresas = await cs.moskitTodos('companies', n => { estado.etapa = `Lendo empresas do Moskit… ${n}`; });
+  // Prévia nova (sem progresso salvo) sempre relê os dados; retomada usa os já lidos
+  let temProgresso = false;
+  try { const p0 = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8')); temProgresso = p0.versao === VERSAO_REGRAS; } catch (e) {}
+  const { bling, contatos, empresas } = await lerListas(!temProgresso);
   const diag = cs.comparar(bling, contatos, empresas, { excluidos });
   const ufs = await opcoesUf();
   const cadastroMoskit = new Map();
@@ -292,22 +330,28 @@ async function preparar() {
     }
   } catch (e) { /* sem progresso salvo */ }
   const salvarProgresso = () => {
+    if (estado.parar) return; // depois de "Parar" não guarda nada para retomar
     fs.mkdirSync(DIR, { recursive: true });
     const tmp = ARQ_PROGRESSO + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ versao: VERSAO_REGRAS, iniciadoEm: progIniciado, feitos: [...feitos], itens }));
     fs.renameSync(tmp, ARQ_PROGRESSO);
   };
+  salvarAgora = salvarProgresso;
+  if (!feitos.size) salvarProgresso(); // marca a prévia como "em andamento" desde o início
 
   const candidatos = diag.itens.filter(i => i.status !== 'sem_documento');
   const retomados = candidatos.filter(i => feitos.has(String(i.blingId))).length;
   let n = 0;
+  // Um cadastro só conta como conferido depois de terminado (se o servidor cair no meio, é refeito)
+  let anterior = null;
   for (const it of candidatos) {
-    if (estado.parar) { salvarProgresso(); throw new Error('Preparação interrompida.'); }
+    if (anterior !== null) { feitos.add(anterior); anterior = null; }
+    if (estado.parar) throw new Error('Preparação interrompida.');
     n++;
     if (feitos.has(String(it.blingId))) continue;
     if (n % 25 === 0) salvarProgresso();
     estado.etapa = `Conferindo cadastro ${n} de ${candidatos.length}…${retomados ? ` (retomada: ${retomados} já conferidos antes)` : ''}`;
-    feitos.add(String(it.blingId));
+    anterior = String(it.blingId);
     const docD = dig(it.doc);
     const base = { blingId: it.blingId, nome: it.nome, doc: it.doc, status: 'pendente', erro: '' };
     if (excluidos.includes(docD)) {
@@ -356,6 +400,10 @@ async function preparar() {
     itens.push({ ...base, id: `u:${alvo.tipo}:${alvo.id}`, acao: 'atualizar_moskit', alvo, porCorrespondencia: origemAlvo !== 'CPF/CNPJ' ? origemAlvo : '', moskitNome: ent.name, desejado: des, mudancas });
   }
 
+  if (anterior !== null) feitos.add(anterior);
+  // Item refeito após uma queda substitui o anterior (nunca duplica)
+  itens = [...new Map(itens.map(i => [`${i.blingId}|${i.id}`, i])).values()];
+
   // Um mesmo cadastro do Moskit não pode receber dados de dois clientes do Bling
   const porAlvo = {};
   for (const i of itens) if (i.acao === 'atualizar_moskit') (porAlvo[i.id] = porAlvo[i.id] || []).push(i);
@@ -367,6 +415,7 @@ async function preparar() {
 
   const plano = { geradoEm: new Date().toISOString(), resumo: resumoPlano(itens), itens };
   salvarPlano(plano);
+  salvarAgora = null;
   try { fs.unlinkSync(ARQ_PROGRESSO); } catch (e) {}
   return plano;
 }
@@ -412,7 +461,9 @@ async function aplicarItem(item) {
     const doc = dig(item.desejado.doc);
     // Confere de novo se ainda não existe (pelo documento) antes de criar
     const busca = await moskit('POST', `/${tipo === 'empresa' ? 'companies' : 'contacts'}/search`, [{ field: tipo === 'empresa' ? 'cnpj' : 'cpf', expression: 'like', values: [cs.formatarDoc(doc)] }]);
-    if (Array.isArray(busca) && busca.some(x => dig(tipo === 'empresa' ? x.cnpj : x.cpf) === doc)) {
+    const existente = Array.isArray(busca) ? busca.find(x => dig(tipo === 'empresa' ? x.cnpj : x.cpf) === doc) : null;
+    if (existente) {
+      if (cs.mesmoNome(existente.name, item.desejado.nome || item.nome)) return { status: 'ok', criadoId: existente.id, erro: '' }; // criado antes de uma interrupção
       return { status: 'erro', erro: 'Já existe no Moskit um cadastro com este CPF/CNPJ (criado depois da prévia). Prepare de novo.' };
     }
     const vazio = { name: '', phones: [], emails: [], entityCustomFields: [] };
@@ -449,6 +500,8 @@ async function aplicarItem(item) {
 async function aplicar(ids) {
   const plano = lerPlano();
   if (!plano) throw new Error('Não há prévia preparada.');
+  gravarJson(ARQ_LOTE, { geradoEmPlano: plano.geradoEm, ids, iniciadoEm: new Date().toISOString() });
+  salvarAgora = () => salvarPlano({ ...plano, resumo: resumoPlano(plano.itens) });
   // Grava na ordem em que os cadastros foram selecionados
   const porId = new Map(plano.itens.map(i => [i.id, i]));
   const fila = [...new Set(ids)].map(id => porId.get(id)).filter(i => i && i.status === 'pendente' && ['atualizar_moskit', 'criar_moskit', 'corrigir_bling'].includes(i.acao));
@@ -472,6 +525,30 @@ async function aplicar(ids) {
   }
   plano.resumo = resumoPlano(plano.itens);
   salvarPlano(plano);
+  salvarAgora = null;
+  // Terminou (ou parou por segurança): nunca retomar este lote sozinho
+  try { fs.unlinkSync(ARQ_LOTE); } catch (e) {}
+}
+
+// Ao religar o servidor: continua a prévia ou o lote de gravação que estavam em andamento
+function retomarAoIniciar() {
+  try {
+    const lote = JSON.parse(fs.readFileSync(ARQ_LOTE, 'utf8'));
+    const plano = lerPlano();
+    if (plano && lote.geradoEmPlano === plano.geradoEm && Date.now() - Date.parse(lote.iniciadoEm) < 24 * 3600 * 1000) {
+      console.log('[contatos] retomando gravação em lote');
+      return executar('aplicar', () => aplicar(lote.ids));
+    }
+    fs.unlinkSync(ARQ_LOTE);
+  } catch (e) { /* sem lote */ }
+  try {
+    const p = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8'));
+    if (p.versao === VERSAO_REGRAS && Date.now() - Date.parse(p.iniciadoEm) < 24 * 3600 * 1000) {
+      console.log('[contatos] retomando prévia');
+      return executar('preparar', preparar);
+    }
+  } catch (e) { /* sem prévia */ }
+  return { iniciado: false };
 }
 
 function executar(tarefa, fn) {
@@ -489,11 +566,19 @@ function executar(tarefa, fn) {
 module.exports = {
   iniciarPreparo: () => executar('preparar', preparar),
   iniciarAplicacao: (ids) => executar('aplicar', () => aplicar(ids)),
-  parar: () => { if (estado.rodando) estado.parar = true; return { ok: true }; },
+  parar: () => {
+    if (estado.rodando) estado.parar = true;
+    // "Parar" é definitivo: não retoma sozinho depois
+    try { fs.unlinkSync(ARQ_LOTE); } catch (e) {}
+    try { fs.unlinkSync(ARQ_PROGRESSO); } catch (e) {}
+    return { ok: true };
+  },
+  retomarAoIniciar,
+  salvarAoDesligar: () => { try { if (salvarAgora) salvarAgora(); } catch (e) {} },
   status: () => {
     let progresso = null;
     try { const p = JSON.parse(fs.readFileSync(ARQ_PROGRESSO, 'utf8')); if (p.versao === VERSAO_REGRAS) progresso = { iniciadoEm: p.iniciadoEm, conferidos: (p.feitos || []).length }; } catch (e) {}
-    return { ...estado, plano: lerPlano(), progresso };
+    return { ...estado, plano: lerPlano(), progresso, loteEmAndamento: fs.existsSync(ARQ_LOTE) };
   },
   _internals: { montarAtualizacao, desejadoDoBling, corpoPut, CF }
 };

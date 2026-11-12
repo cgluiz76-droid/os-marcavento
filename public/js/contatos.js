@@ -224,9 +224,12 @@ Object.assign(ContatosManager, {
       if (planoNovo || !this.selecaoIniciada) this.syncSelecaoPadrao();
       if (this.aba === 'sync') this.syncRender();
       clearTimeout(this.syncTimer);
-      if (r.rodando) this.syncTimer = setTimeout(() => this.syncCarregar(), 2500);
+      if (r.rodando || r.progresso || r.loteEmAndamento) this.syncTimer = setTimeout(() => this.syncCarregar(), 2500);
     } catch (e) {
-      document.getElementById('contatos-sync-status').textContent = 'Erro: ' + e.message;
+      // Servidor reiniciando: tenta de novo em alguns segundos
+      document.getElementById('contatos-sync-status').textContent = '⏳ Servidor reiniciando… a tarefa continua em instantes.';
+      clearTimeout(this.syncTimer);
+      this.syncTimer = setTimeout(() => this.syncCarregar(), 4000);
     }
   },
 
@@ -307,8 +310,9 @@ Object.assign(ContatosManager, {
     document.getElementById('contatos-sync-preparar').disabled = !!st.rodando;
     document.getElementById('contatos-sync-parar').style.display = st.rodando ? '' : 'none';
     ['contatos-sync-teste', 'contatos-sync-gravar'].forEach(id => { document.getElementById(id).disabled = !!st.rodando; });
-    if (st.rodando) elSt.textContent = '⏳ ' + (st.etapa || 'Trabalhando…') + (st.tarefa === 'preparar' ? ' (confere cadastro por cadastro: cerca de 20 minutos; pode fechar a janela)' : ' (pode fechar a janela)');
-    else if (st.progresso) elSt.textContent = `⚠️ Há uma prévia interrompida (${st.progresso.conferidos} cadastros já conferidos). Clique em "Preparar prévia" para continuar de onde parou.`;
+    if (st.rodando) elSt.textContent = '⏳ ' + (st.etapa || 'Trabalhando…') + ' — mantenha esta tela aberta: o servidor (plano de teste do Fly) reinicia a cada 5 minutos e a tarefa continua sozinha de onde parou';
+    else if (st.loteEmAndamento) elSt.textContent = '⏳ Gravação em andamento. O servidor reiniciou e ela continua sozinha em instantes…';
+    else if (st.progresso) elSt.textContent = `⏳ Prévia em andamento (${st.progresso.conferidos} cadastros conferidos). O servidor reiniciou e ela continua sozinha em instantes…`;
     else if (st.erro) elSt.textContent = '⚠️ ' + st.erro;
     else if (p) elSt.textContent = 'Prévia de ' + this.dataHora(p.geradoEm) + '.';
     else elSt.textContent = 'Nenhuma prévia preparada ainda.';

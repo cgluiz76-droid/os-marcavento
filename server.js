@@ -829,6 +829,16 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
+// Conta de teste do Fly.io desliga a máquina a cada 5 min: salva o progresso das tarefas de contatos
+// no aviso de desligamento e continua sozinho quando o servidor religa.
+for (const sinal of ['SIGINT', 'SIGTERM']) {
+  process.once(sinal, () => {
+    try { contatosSync.salvarAoDesligar(); } catch (e) {}
+    process.exit(0);
+  });
+}
+setTimeout(() => { try { contatosSync.retomarAoIniciar(); } catch (e) { console.error('[contatos] retomada:', e.message); } }, 5000);
+
 app.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(`  SISTEMA O.S. MARCA VENTO - MOSKIT CRM INTEGRATION`);
