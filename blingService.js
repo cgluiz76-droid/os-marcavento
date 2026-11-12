@@ -1580,5 +1580,5 @@ module.exports = {
   blingFetch,
   _limparVazios: limparVazios,
   // Exportado para testes
-  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext, traduzirOpcoes, opcoesCache, limparMunicipio }
+  _internals: { toIsoDate, parseNumber, addDays, onlyDigits, buildContext, traduzirOpcoes, opcoesCache, limparMunicipio, ufFromCep }
 };
