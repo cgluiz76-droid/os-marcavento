@@ -444,9 +444,16 @@ async function preparar() {
 let moskitUsuarioId = null;
 async function usuarioMoskit() {
   if (moskitUsuarioId) return moskitUsuarioId;
-  const me = await moskit('GET', '/users/me');
-  moskitUsuarioId = me && me.id;
-  if (!moskitUsuarioId) throw new Error('Não foi possível identificar o usuário do Moskit.');
+  // A API v2 do Moskit não tem "/users/me": usa o responsável mais comum entre as empresas já cadastradas
+  const lista = await moskit('GET', '/companies?quantity=50');
+  const conta = {};
+  for (const c of Array.isArray(lista) ? lista : []) {
+    const id = (c.responsible && c.responsible.id) || (c.createdBy && c.createdBy.id);
+    if (id) conta[id] = (conta[id] || 0) + 1;
+  }
+  const melhor = Object.entries(conta).sort((a, b) => b[1] - a[1])[0];
+  moskitUsuarioId = melhor ? Number(melhor[0]) : null;
+  if (!moskitUsuarioId) throw new Error('Não foi possível identificar o responsável no Moskit.');
   return moskitUsuarioId;
 }
 
@@ -459,7 +466,17 @@ async function aplicarItem(item) {
     if (!mudancas.length) return { status: 'sem_mudanca', mudancas: [] };
     backup({ acao: 'atualizar_moskit', alvo: item.alvo, blingId: item.blingId, antes });
     await moskit('PUT', rota, corpoPut(ent));
-    const depois = await moskit('GET', rota);
+    // O Moskit leva alguns segundos para devolver o dado novo: relê até enxergar a gravação
+    // (só então a conferência de vínculos vale, porque a leitura é a atual).
+    const faltam = (d) => montarAtualizacao(d, item.alvo.tipo, item.desejado, ufs).mudancas
+      .filter(m => m.campo !== 'Nome' || norm(d.name) !== norm(String(item.desejado.nome).slice(0, 60)));
+    let depois, resto;
+    for (let t = 0; t < 6; t++) {
+      if (t) await sleep(1500 * t);
+      depois = await moskit('GET', rota);
+      resto = faltam(depois);
+      if (!resto.length) break;
+    }
     const vA = contarVinculos(antes, item.alvo.tipo), vD = contarVinculos(depois, item.alvo.tipo);
     const perdeu = Object.keys(vA).filter(k => vD[k] < vA[k]);
     if (perdeu.length) {
@@ -468,8 +485,7 @@ async function aplicarItem(item) {
       err.critico = true;
       throw err;
     }
-    const resto = montarAtualizacao(depois, item.alvo.tipo, item.desejado, ufs).mudancas.filter(m => m.campo !== 'Nome' || norm(depois.name) !== norm(String(item.desejado.nome).slice(0, 60)));
-    if (resto.length) return { status: 'erro', erro: 'Gravado, mas o Moskit guardou diferente nestes campos (conferir): ' + resto.map(m => m.campo).join(', '), mudancas };
+    if (resto.length) return { status: 'erro', erro: 'Gravado, mas o Moskit ainda não mostra estes campos (conferir): ' + resto.map(m => m.campo).join(', '), mudancas };
     return { status: 'ok', mudancas };
   }
 
@@ -548,6 +564,31 @@ async function aplicar(ids) {
   try { fs.unlinkSync(ARQ_LOTE); } catch (e) {}
 }
 
+// Reconfere (só leitura) os itens marcados com erro por atraso de leitura do Moskit
+// e devolve para "pendente" as criações que falharam antes de gravar qualquer coisa.
+async function reconferir() {
+  const plano = lerPlano();
+  if (!plano) throw new Error('Não há prévia.');
+  const ufs = await opcoesUf();
+  const alvos = plano.itens.filter(i => i.status === 'erro' && ((i.acao === 'atualizar_moskit' && /^Gravado, mas/.test(i.erro || '')) || (i.acao === 'criar_moskit' && /\/users\/me/.test(i.erro || ''))));
+  let n = 0;
+  for (const i of alvos) {
+    if (estado.parar) break;
+    n++;
+    estado.etapa = `Reconferindo ${n} de ${alvos.length}: ${i.nome}`;
+    if (i.acao === 'criar_moskit') { i.status = 'pendente'; i.erro = ''; continue; }
+    try {
+      const d = await moskit('GET', `/${i.alvo.tipo === 'empresa' ? 'companies' : 'contacts'}/${i.alvo.id}`);
+      const resto = montarAtualizacao(d, i.alvo.tipo, i.desejado, ufs).mudancas.filter(m => m.campo !== 'Nome' || norm(d.name) !== norm(String(i.desejado.nome).slice(0, 60)));
+      if (!resto.length) { i.status = 'ok'; i.erro = ''; i.reconferidoEm = new Date().toISOString(); }
+      else i.erro = 'Gravado, mas o Moskit ainda não mostra estes campos (conferir): ' + resto.map(m => m.campo).join(', ');
+    } catch (e) { /* mantém como está */ }
+    if (n % 25 === 0) salvarPlano({ ...plano, resumo: resumoPlano(plano.itens) });
+  }
+  plano.resumo = resumoPlano(plano.itens);
+  salvarPlano(plano);
+}
+
 // Recalcula uma prévia já pronta com as regras atuais, sem novas leituras no Bling
 // (usa as listas do Moskit guardadas e os dados do Bling que já estão em cada item).
 // Só remove ou reduz alterações: itens sem mudança somem; nada novo é acrescentado.
@@ -624,6 +665,7 @@ module.exports = {
   },
   retomarAoIniciar,
   iniciarRecalculo: () => executar('recalcular', recalcular),
+  iniciarReconferencia: () => executar('reconferir', reconferir),
   salvarAoDesligar: () => { try { if (salvarAgora) salvarAgora(); } catch (e) {} },
   status: () => {
     let progresso = null;
